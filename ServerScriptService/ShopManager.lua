@@ -1,6 +1,6 @@
 -- -------------------------------------------------------------------------------
 -- 📂 PROJECT: LAST LOOK
--- 📝 SCRIPT: ShopManager (Server)
+-- 📝 SCRIPT: ShopManager (Server - PLATINUM MASTER)
 -- 🛠️ AUTH: Novae Studios
 -- 💡 DESC: The "Boutique". Weekly Drops, Influence Spending, Gamepasses.
 -- -------------------------------------------------------------------------------
@@ -12,6 +12,7 @@ local MarketplaceService = game:GetService("MarketplaceService")
 -- MODULES
 local DataManager = require(game.ServerScriptService.DataManager)
 local PerkRegistry = require(ReplicatedStorage.Modules.PerkRegistry)
+local AccessoryRegistry = require(ReplicatedStorage.Modules.AccessoryRegistry)
 
 -- EVENTS
 local ShopRemote = Instance.new("RemoteEvent")
@@ -19,15 +20,54 @@ ShopRemote.Name = "ShopEvent"
 ShopRemote.Parent = ReplicatedStorage
 
 -- CONFIG
--- ⚠️ REPLACE THESE NUMBERS WITH YOUR REAL DEV PRODUCT IDs FROM ROBLOX DASHBOARD
+local WEEKLY_SEED_OFFSET = 12345 
+-- ⚠️ REPLACE WITH REAL ROBLOX PRODUCT IDs
 local PRODUCT_IDS = {
 	SMALL_SPOOLS = 123456, 
 	INFLUENCE_PACK = 654321
 }
 
--- // FUNCTION: Process Purchase (Influence/Spools)
-ShopRemote.OnServerEvent:Connect(function(player, action, itemId, currencyType)
-	if action == "BuyItem" then
+-- // FUNCTION: Get Weekly "Featured 4"
+-- Returns 2 Perks and 2 Accessories based on the current week
+local function getWeeklyStock()
+	local weekNum = math.floor(os.time() / 604800) -- Weeks since epoch (1970)
+	local rng = Random.new(WEEKLY_SEED_OFFSET + weekNum) -- Seed changes every Sunday
+	
+	-- Helper to pick random keys from a table
+	local function pickRandom(dictionary, count)
+		local keys = {}
+		for k in pairs(dictionary) do table.insert(keys, k) end
+		local result = {}
+		for i = 1, count do
+			if #keys == 0 then break end
+			local idx = rng:NextInteger(1, #keys)
+			table.insert(result, keys[idx])
+			table.remove(keys, idx)
+		end
+		return result
+	end
+	
+	local perks = pickRandom(PerkRegistry.Definitions, 2)
+	local accessories = pickRandom(AccessoryRegistry.Definitions, 2)
+	
+	return {
+		Perks = perks,
+		Accessories = accessories,
+		WeekNumber = weekNum
+	}
+end
+
+-- // CLIENT REQUESTS
+ShopRemote.OnServerEvent:Connect(function(player, action, ...)
+	
+	-- 1. GET WEEKLY FEATURED
+	if action == "GetFeatured" then
+		local stock = getWeeklyStock()
+		ShopRemote:FireClient(player, "FeaturedData", stock)
+		
+	-- 2. BUY ITEM
+	elseif action == "BuyItem" then
+		local itemId, category = ... -- Client sends "Perk" or "Accessory"
 		local data = DataManager:Get(player)
 		if not data then return end
 		
@@ -37,35 +77,57 @@ ShopRemote.OnServerEvent:Connect(function(player, action, itemId, currencyType)
 			return 
 		end
 		
-		-- CHECK 2: Get Price from Registry
-		local perkData = PerkRegistry.GetPerk(itemId)
-		if not perkData then 
-			warn("⚠️ Item " .. itemId .. " not found in Registry!")
+		-- CHECK 2: Get Price & Currency Type
+		local itemData = nil
+		local cost = 0
+		local currency = "Spools" -- Default
+		
+		if category == "Perk" then
+			itemData = PerkRegistry.GetPerk(itemId)
+			if itemData then 
+				cost = itemData.Price 
+				currency = "Influence" -- Perks cost Influence (📍)
+			end
+		elseif category == "Accessory" then
+			itemData = AccessoryRegistry.GetItem(itemId)
+			if itemData then 
+				cost = itemData.Price 
+				currency = "Spools" -- Accessories cost Spools (🧵)
+			end
+		end
+		
+		if not itemData then 
+			warn("⚠️ Item data not found: " .. itemId)
 			return 
 		end
 		
-		-- Dynamic Pricing based on Rarity (Centralized Logic)
-		local price = 0
-		if perkData.Rarity == "Common" then price = 5
-		elseif perkData.Rarity == "Rare" then price = 10
-		elseif perkData.Rarity == "Legendary" then price = 15
-		elseif perkData.Rarity == "Mythic" then price = 25
-		end
-		
 		-- CHECK 3: Transaction
-		if currencyType == "Influence" then
-			if (data.Influence or 0) >= price then
-				data.Influence -= price
+		if currency == "Influence" then
+			if (data.Influence or 0) >= cost then
+				data.Influence -= cost
 				table.insert(data.Inventory, itemId)
 				
-				-- Notify Client
 				ShopRemote:FireClient(player, "PurchaseSuccess", itemId)
-				print("🛍️ " .. player.Name .. " bought " .. itemId .. " for " .. price .. " Influence")
+				print("🛍️ " .. player.Name .. " bought Perk " .. itemId)
+				
+				-- IMPORTANT: Update Client Attribute immediately for UI
+				player:SetAttribute("Inventory", table.concat(data.Inventory, ","))
 			else
 				ShopRemote:FireClient(player, "PurchaseFailed", "Not enough Influence")
 			end
-		else
-			-- Handle Spools logic here if you add Spool items later
+			
+		elseif currency == "Spools" then
+			if data.Spools >= cost then
+				data.Spools -= cost
+				table.insert(data.Inventory, itemId)
+				
+				ShopRemote:FireClient(player, "PurchaseSuccess", itemId)
+				print("👜 " .. player.Name .. " bought Accessory " .. itemId)
+				
+				player:SetAttribute("Inventory", table.concat(data.Inventory, ","))
+			else
+				ShopRemote:FireClient(player, "PurchaseFailed", "Not enough Spools")
+			end
 		end
 	end
 end)
@@ -84,7 +146,9 @@ MarketplaceService.ProcessReceipt = function(receiptInfo)
 	if receiptInfo.ProductId == PRODUCT_IDS.INFLUENCE_PACK then
 		data.Influence = (data.Influence or 0) + 5
 		print("💸 " .. player.Name .. " bought 5 Influence!")
-		-- Fire UI update via Remote if needed
+		
+		-- Update Attribute if needed (though DataManager saves usually handle re-init)
+		-- Fire specific UI remote if you want a popup
 		
 	elseif receiptInfo.ProductId == PRODUCT_IDS.SMALL_SPOOLS then
 		data.Spools = data.Spools + 1500
