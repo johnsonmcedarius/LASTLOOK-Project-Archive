@@ -1,8 +1,8 @@
 -- -------------------------------------------------------------------------------
 -- 📂 PROJECT: LAST LOOK
--- 📝 SCRIPT: RoundEndManager (Server)
+-- 📝 SCRIPT: RoundEndManager (Server - PLATINUM MASTER)
 -- 🛠️ AUTH: Novae Studios
--- 💡 DESC: Calculates "Best Dressed" (MVP), Payouts, and Lobby Reset.
+-- 💡 DESC: Calculates "Best Dressed" (MVP), Payouts (Spools + XP), and Lobby Reset.
 -- -------------------------------------------------------------------------------
 
 local Players = game:GetService("Players")
@@ -16,7 +16,7 @@ local RoundOverRemote = Instance.new("RemoteEvent")
 RoundOverRemote.Name = "RoundOverEvent" -- Fires to Client with final stats
 RoundOverRemote.Parent = ReplicatedStorage
 
--- BINDABLES (For other scripts to talk to this one)
+-- BINDABLES (Inputs)
 local AddScoreBindable = Instance.new("BindableEvent")
 AddScoreBindable.Name = "AddScore"
 AddScoreBindable.Parent = ServerStorage
@@ -25,15 +25,21 @@ local EndGameBindable = Instance.new("BindableEvent")
 EndGameBindable.Name = "TriggerEndGame"
 EndGameBindable.Parent = ServerStorage
 
+-- BINDABLES (Outputs)
+-- We use WaitForChild for AddXP because XPManager might load a split second later
+local AddXPBindable = ServerStorage:WaitForChild("AddXP", 10)
+
 -- CONFIG
 local SCORES = {
 	ESCAPE = 50,
 	GREAT_STITCH = 10,
 	RESCUE = 30,
-	SURVIVAL_MINUTE = 5, -- Points per minute survived
+	SURVIVAL_MINUTE = 5, -- Points per minute survived (Calculated in loop if needed)
 	KILL = 50, -- Per kill (Saboteur)
 	WIPEOUT = 100 -- All 4 dead (Saboteur)
 }
+
+local XP_CONVERSION_RATE = 10 -- 1 Score Point = 10 XP
 
 -- STATE
 local PlayerScores = {} -- [UserId] = {Total = 0, Breakdown = {}}
@@ -52,7 +58,7 @@ local function initScore(player)
 	end
 end
 
--- // FUNCTION: Add Score
+-- // FUNCTION: Add Score (Called live during match)
 AddScoreBindable.Event:Connect(function(player, category, amount)
 	if not player then return end
 	initScore(player)
@@ -74,7 +80,7 @@ AddScoreBindable.Event:Connect(function(player, category, amount)
 	print("📈 " .. player.Name .. " + " .. points .. " pts (" .. category .. ")")
 end)
 
--- // CORE: Process End Game
+-- // CORE: Process End Game (Triggered by GameLoop)
 EndGameBindable.Event:Connect(function(winnerTeam)
 	print("📸 FLASHING LIGHTS. CALCULATING MVP.")
 	
@@ -82,7 +88,7 @@ EndGameBindable.Event:Connect(function(winnerTeam)
 	local highestScore = -1
 	local finalStats = {}
 	
-	-- 1. Calculate MVP & Distribute Spools
+	-- 1. Calculate MVP & Distribute Rewards
 	for _, player in pairs(Players:GetPlayers()) do
 		initScore(player)
 		local data = PlayerScores[player.UserId]
@@ -100,10 +106,15 @@ EndGameBindable.Event:Connect(function(winnerTeam)
 			MVP = player
 		end
 		
-		-- PAYOUT (Spools)
-		-- Convert Score to Spools (1:1 ratio or whatever balance you want)
-		local spoolEarned = math.floor(data.Total)
+		-- A. SPOOL PAYOUT (Money)
+		local spoolEarned = math.floor(data.Total) -- 1:1 Ratio for Money
 		DataManager:AdjustSpools(player, spoolEarned)
+		
+		-- B. XP HANDSHAKE (Leveling)
+		local xpEarned = math.floor(data.Total * XP_CONVERSION_RATE)
+		if AddXPBindable then
+			AddXPBindable:Fire(player, xpEarned)
+		end
 		
 		-- Add to table to send to clients
 		table.insert(finalStats, {
@@ -128,7 +139,7 @@ EndGameBindable.Event:Connect(function(winnerTeam)
 	-- 3. Reset Data for Next Round
 	PlayerScores = {} 
 	
-	-- Note: GameLoop handles the actual teleport back to lobby after X seconds
+	print("🏁 Round Audit Complete. Spools & XP Distributed.")
 end)
 
 -- Cleanup on leave
