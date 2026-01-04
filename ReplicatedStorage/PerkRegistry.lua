@@ -1,83 +1,118 @@
 -- -------------------------------------------------------------------------------
 -- 📂 PROJECT: LAST LOOK
--- 📝 SCRIPT: PerkRegistry (Module)
--- 💡 DESC: The central database for all perk stats. "The Brain."
+-- 📝 SCRIPT: PerkRegistry (Module - LAUNCH COLLECTION)
+-- 🛠️ AUTH: Novae Studios
+-- 💡 DESC: The 12 Launch Perks. Influence (📍) Prices included.
 -- -------------------------------------------------------------------------------
 
 local PerkRegistry = {}
 
 PerkRegistry.Definitions = {
 	
-	-- // DESIGNER PERKS --------------------------------------------------------
+	-- // 🧵 DESIGNER PERKS (SURVIVORS) ---------------------------------------
 	
 	["RunwayStrut"] = {
 		Name = "Runway Strut",
-		Rarity = "Common",
-		Description = "Sprint at 135% speed for a short burst.",
-		-- Stats logic looks for
-		Stats = {
-			SpeedMultiplier = 1.35, -- 135% speed
-			Duration = 3,           -- Seconds
-			Cooldown = 40,          -- Seconds
-			IsLunge = true          -- Determines animation style
-		}
-	},
-	
-	["QuickStitch"] = {
-		Name = "Quick Stitch",
-		Rarity = "Common",
-		Description = "Heal yourself at 50% speed without a medkit.",
-		Stats = {
-			HealSpeedMult = 0.5,
-			SkillCheckDifficulty = "Hard"
-		}
-	},
-
-	["ModelBehavior"] = {
-		Name = "Model Behavior",
 		Rarity = "Rare",
-		Description = "Leave no scratch marks for 10s after unhooking someone.",
-		Stats = {
-			Duration = 10,
-			HideScratchMarks = true
-		}
+		Price = 10, -- 📍
+		Description = "Sprint at 150% speed for 3s after vaulting.",
+		Stats = {SpeedMult = 1.5, Duration = 3, Cooldown = 40}
 	},
 	
-	["SecondLook"] = {
-		Name = "Second Look",
-		Rarity = "Mythic",
-		Description = "One chance to escape a grab.",
-		Stats = {
-			SkillCheckWindow = 0.1, -- Tiny window, "earned not cheap"
-			UsesPerMatch = 1
-		}
+	["SilentStitch"] = {
+		Name = "Silent Stitch",
+		Rarity = "Common",
+		Price = 5, -- 📍
+		Description = "Breathing and footsteps are silent while crouching.",
+		Stats = {VolumeMult = 0}
 	},
 
-	-- // SABOTEUR PERKS --------------------------------------------------------
+	["AdrenalineRush"] = {
+		Name = "Adrenaline Rush",
+		Rarity = "Mythic",
+		Price = 25, -- 📍
+		Description = "Heal 1 state + 150% speed for 5s when Exits power.",
+		Stats = {HealAmount = 1, SpeedMult = 1.5, Duration = 5}
+	},
+	
+	["FastHands"] = {
+		Name = "Fast Hands",
+		Rarity = "Common",
+		Price = 5, -- 📍
+		Description = "Great and Good Skill Check zones are 20% larger.",
+		Stats = {ZoneSizeMult = 1.2}
+	},
+	
+	["MedicsTouch"] = {
+		Name = "Medic's Touch",
+		Rarity = "Rare",
+		Price = 8, -- 📍
+		Description = "Healing speed is boosted by 50%.",
+		Stats = {HealSpeedMult = 1.5}
+	},
+	
+	["SixthSense"] = {
+		Name = "Sixth Sense",
+		Rarity = "Legendary",
+		Price = 15, -- 📍
+		Description = "Screen glows if Saboteur looks at you from >30 studs.",
+		Stats = {Range = 30}
+	},
+
+	-- // ✂️ SABOTEUR PERKS (KILLERS) -----------------------------------------
 	
 	["RippedSeam"] = {
 		Name = "Ripped Seam",
 		Rarity = "Common",
-		Description = "Kick station to regress progress.",
-		Stats = {
-			RegressionPercent = 0.20, -- 20%
-			KickTime = 2
-		}
+		Price = 5, -- 📍
+		Description = "Kicking a station instantly deletes 10% progress.",
+		Stats = {Regression = 0.10}
+	},
+	
+	["BloodTrail"] = {
+		Name = "Blood Trail",
+		Rarity = "Rare",
+		Price = 8, -- 📍
+		Description = "Injured Designers leave neon red footprints for 4s.",
+		Stats = {Duration = 4}
+	},
+	
+	["HexLockdown"] = {
+		Name = "Hex: Lockdown",
+		Rarity = "Legendary",
+		Price = 15, -- 📍
+		Description = "Block a vault for 15s after crossing it.",
+		Stats = {Duration = 15}
+	},
+	
+	["TrendForecast"] = {
+		Name = "Trend Forecast",
+		Rarity = "Common",
+		Price = 5, -- 📍
+		Description = "Failed skill checks reveal aura for 5 seconds.",
+		Stats = {Duration = 5}
+	},
+	
+	["HeavyPresence"] = {
+		Name = "Heavy Presence",
+		Rarity = "Rare",
+		Price = 10, -- 📍
+		Description = "Terror Radius is 20% larger.",
+		Stats = {RadiusMult = 1.2}
+	},
+	
+	["EndgameCollapse"] = {
+		Name = "Endgame Collapse",
+		Rarity = "Mythic",
+		Price = 25, -- 📍
+		Description = "Survivors are Exposed (1-hit down) when gates power.",
+		Stats = {Duration = 60}
 	}
 }
 
--- // HELPER: Get Perk Data safely
+-- // HELPER: Get Perk Data
 function PerkRegistry.GetPerk(perkId)
 	return PerkRegistry.Definitions[perkId]
-end
-
--- // HELPER: Get specific stat (e.g., just the speed multiplier)
-function PerkRegistry.GetStat(perkId, statName)
-	local perk = PerkRegistry.Definitions[perkId]
-	if perk and perk.Stats then
-		return perk.Stats[statName]
-	end
-	return nil
 end
 
 return PerkRegistry
