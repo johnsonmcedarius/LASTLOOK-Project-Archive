@@ -1,8 +1,8 @@
 -- -------------------------------------------------------------------------------
 -- 📂 PROJECT: LAST LOOK
--- 📝 SCRIPT: BoutiqueUIController (Client)
+-- 📝 SCRIPT: BoutiqueUIController (Client - SEARCH BAR ADDED)
 -- 🛠️ AUTH: Novae Studios
--- 💡 DESC: Generates the Grid. Handles "Sold Out" states & Featured Tab.
+-- 💡 DESC: Generates Grid + Search & Tag Filter Logic.
 -- -------------------------------------------------------------------------------
 
 local Players = game:GetService("Players")
@@ -15,99 +15,120 @@ local AccessoryRegistry = require(ReplicatedStorage.Modules.AccessoryRegistry)
 
 local ShopRemote = ReplicatedStorage:WaitForChild("ShopEvent")
 
--- CONFIG
-local BODONI = Enum.Font.Bodoni -- High Fashion Font
+local BODONI = Enum.Font.Bodoni 
+local BoutiqueHUD = nil 
 
--- STATE
-local BoutiqueHUD = nil -- Reference to ScreenGui
-
--- // FUNCTION: Build Grid
--- targetFrame: The ScrollingFrame (e.g., PerksTab)
--- category: "Perk" or "Accessory"
-local function buildGrid(targetFrame, category)
-	if not targetFrame then return end
+-- // HELPER: Matches Search?
+local function matchesSearch(data, searchText)
+	if searchText == "" then return true end
 	
-	-- 1. Clear Old
+	searchText = string.lower(searchText)
+	local name = string.lower(data.Name)
+	
+	if string.find(name, searchText) then return true end
+	
+	if data.Tags then
+		for _, tag in pairs(data.Tags) do
+			if string.find(string.lower(tag), searchText) then return true end
+		end
+	end
+	
+	return false
+end
+
+-- // FUNCTION: Build Grid (With Search Filter)
+local function buildGrid(targetFrame, category, filterText)
+	if not targetFrame then return end
+	filterText = filterText or ""
+	
 	for _, child in pairs(targetFrame:GetChildren()) do
 		if child:IsA("ImageButton") then child:Destroy() end
 	end
 	
-	-- 2. Get Data Source
 	local source = (category == "Perk") and PerkRegistry.Definitions or AccessoryRegistry.Definitions
-	
-	-- 3. Get User Inventory (From Attribute for speed)
 	local invString = Player:GetAttribute("Inventory") or ""
 	
-	-- 4. Generate Cards
-	-- Nerd needs to make a template button named "CardTemplate" inside the script or UI
-	-- For this script, we assume there's a template inside the ScrollingFrame invisible
 	local template = targetFrame.Parent:FindFirstChild("CardTemplate") 
-	if not template then warn("⚠️ No CardTemplate found!") return end
+	if not template then return end
 	
 	for id, info in pairs(source) do
-		local card = template:Clone()
-		card.Name = id
-		card.Visible = true
-		card.LayoutOrder = info.Price -- Sort by price automatically
-		
-		-- Set Info
-		local nameLbl = card:FindFirstChild("ItemName")
-		local priceLbl = card:FindFirstChild("PriceTag")
-		local icon = card:FindFirstChild("Icon")
-		
-		if nameLbl then 
-			nameLbl.Text = info.Name 
-			nameLbl.Font = BODONI
+		-- SEARCH FILTER
+		if matchesSearch(info, filterText) then
+			local card = template:Clone()
+			card.Name = id
+			card.Visible = true
+			card.LayoutOrder = info.Price 
+			
+			local nameLbl = card:FindFirstChild("ItemName")
+			local priceLbl = card:FindFirstChild("PriceTag")
+			
+			if nameLbl then 
+				nameLbl.Text = info.Name 
+				nameLbl.Font = BODONI
+			end
+			
+			if priceLbl then
+				local currencyIcon = (category == "Perk") and "📍" or "🧵"
+				priceLbl.Text = info.Price .. " " .. currencyIcon
+			end
+			
+			if string.find(invString, id) then
+				if priceLbl then priceLbl.Text = "EQUIP" end
+				card.ImageColor3 = Color3.fromRGB(100, 100, 100) 
+			else
+				card.MouseButton1Click:Connect(function()
+					ShopRemote:FireServer("BuyItem", id, category)
+				end)
+			end
+			
+			card.Parent = targetFrame
 		end
-		
-		if priceLbl then
-			local currencyIcon = (category == "Perk") and "📍" or "🧵"
-			priceLbl.Text = info.Price .. " " .. currencyIcon
-		end
-		
-		-- Check Ownership
-		if string.find(invString, id) then
-			-- OWNED STATE
-			if priceLbl then priceLbl.Text = "EQUIP" end
-			card.ImageColor3 = Color3.fromRGB(100, 100, 100) -- Dim it slightly
-			-- Disable buying, enable equipping logic if Wardrobe is open
-		else
-			-- BUY STATE
-			card.MouseButton1Click:Connect(function()
-				ShopRemote:FireServer("BuyItem", id, category)
-			end)
-		end
-		
-		card.Parent = targetFrame
 	end
 end
 
--- // FUNCTION: Populate Featured Tab
+-- // SETUP: Search Input Listener
+local function setupSearchListeners()
+	if not BoutiqueHUD then return end
+	
+	local searchBar = BoutiqueHUD:FindFirstChild("SearchBar", true)
+	if searchBar then
+		searchBar:GetPropertyChangedSignal("Text"):Connect(function()
+			local text = searchBar.Text
+			-- Refresh both grids live
+			local perksFrame = BoutiqueHUD:FindFirstChild("PerksGrid", true)
+			local accFrame = BoutiqueHUD:FindFirstChild("AccessoriesGrid", true)
+			
+			if perksFrame then buildGrid(perksFrame, "Perk", text) end
+			if accFrame then buildGrid(accFrame, "Accessory", text) end
+		end)
+	end
+end
+
 local function loadFeatured()
 	ShopRemote:FireServer("GetFeatured")
 end
 
 ShopRemote.OnClientEvent:Connect(function(action, data)
 	if action == "FeaturedData" then
-		-- Data contains {Perks = {id, id}, Accessories = {id, id}}
-		-- Pass this to a similar build function restricted to just these 4 items
-		print("🔥 Weekly Drop Loaded. Week #" .. data.WeekNumber)
-		-- Update Featured UI elements here
-		
+		print("🔥 Weekly Drop Loaded.")
 	elseif action == "PurchaseSuccess" then
-		-- Refresh Grids immediately
-		-- You might want to call buildGrid() again or just update the specific card
-		print("✅ Transaction Complete!")
+		_G.RefreshBoutique(BoutiqueHUD) -- Rebuild to show "Equip"
 	end
 end)
 
--- EXPORT: Call this when opening the shop
 _G.RefreshBoutique = function(screenGui)
 	BoutiqueHUD = screenGui
+	
 	local perksFrame = BoutiqueHUD:FindFirstChild("PerksGrid", true)
 	local accFrame = BoutiqueHUD:FindFirstChild("AccessoriesGrid", true)
 	
-	if perksFrame then buildGrid(perksFrame, "Perk") end
-	if accFrame then buildGrid(accFrame, "Accessory") end
+	local currentSearch = ""
+	local searchBar = BoutiqueHUD:FindFirstChild("SearchBar", true)
+	if searchBar then currentSearch = searchBar.Text end
+	
+	if perksFrame then buildGrid(perksFrame, "Perk", currentSearch) end
+	if accFrame then buildGrid(accFrame, "Accessory", currentSearch) end
+	
 	loadFeatured()
+	setupSearchListeners() -- Ensure connected
 end
