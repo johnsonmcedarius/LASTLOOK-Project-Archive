@@ -1,21 +1,23 @@
 -- -------------------------------------------------------------------------------
 -- 📂 PROJECT: LAST LOOK
--- 📝 SCRIPT: DataManager (Module)
+-- 📝 SCRIPT: DataManager (Module - ROBUST EDITION)
 -- 🛠️ AUTH: Novae Studios
--- 💡 DESC: The "Vault". Handles Data, Daily Rewards, and allows other scripts access.
+-- 💡 DESC: The "Vault". Retry Logic + GamePass Support.
 -- -------------------------------------------------------------------------------
 
-local DataManager = {} -- The Module Table
+local DataManager = {} 
 
 local DataStoreService = game:GetService("DataStoreService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
+local MarketplaceService = game:GetService("MarketplaceService")
 
-local DATA_VERSION = "v2_LastLook_Alpha_02"
+local DATA_VERSION = "v2_LastLook_Alpha_03" -- [UPDATED] Bumped version
 local PlayerDataStore = DataStoreService:GetDataStore("PlayerData_" .. DATA_VERSION)
 
--- Create Remote if it doesn't exist (Singleton pattern)
+-- GAMEPASS IDs (For persistent checks)
+local GP_2X_XP = 000000 -- REPLACE ID
+
 local DailyRewardRemote = ReplicatedStorage:FindFirstChild("DailyRewardEvent")
 if not DailyRewardRemote then
 	DailyRewardRemote = Instance.new("RemoteEvent")
@@ -23,7 +25,6 @@ if not DailyRewardRemote then
 	DailyRewardRemote.Parent = ReplicatedStorage
 end
 
--- // CONFIG: DAILY REWARDS
 local REWARD_TABLE = {
 	[1] = {Spools = 50, Sigils = 0},
 	[2] = {Spools = 100, Sigils = 0},
@@ -34,7 +35,6 @@ local REWARD_TABLE = {
 	[7] = {Spools = 1000, Sigils = 2},
 }
 
--- Default Data Template
 local DEFAULT_DATA = {
 	Spools = 0,
 	Sigils = 0,
@@ -49,13 +49,14 @@ local DEFAULT_DATA = {
 	Settings = {
 		MusicVolume = 1,
 		SFXVolume = 1
+	},
+	GamePasses = { -- [NEW] Cache GamePasses
+		TwoTimesXP = false
 	}
 }
 
--- PRIVATE STATE (The Vault)
 local sessionData = {}
 
--- // HELPER: Deep Copy
 local function deepCopy(original)
 	local copy = {}
 	for k, v in pairs(original) do
@@ -65,34 +66,32 @@ local function deepCopy(original)
 	return copy
 end
 
--- // HELPER: Reconcile Data
 local function reconcile(data)
 	for key, value in pairs(DEFAULT_DATA) do
 		if data[key] == nil then data[key] = value end
 	end
-	if not data.DailyLogin then data.DailyLogin = deepCopy(DEFAULT_DATA.DailyLogin) end
+	if not data.GamePasses then data.GamePasses = {} end
 	return data
 end
 
--- // CORE: Process Daily Login (Private)
+-- // CORE: Process Daily Login
 local function processDailyLogin(player, data)
 	local lastTime = data.DailyLogin.LastLoginTime
 	local now = os.time()
 	local timeDiff = now - lastTime
 	
-	-- 22 Hours (79200s) to 48 Hours (172800s) logic
 	local streak = data.DailyLogin.Streak
 	
 	if lastTime == 0 then
-		streak = 1 -- First time
+		streak = 1 
 	elseif timeDiff >= 172800 then
-		streak = 1 -- Streak lost
+		streak = 1 
 		print("📅 Streak Reset for " .. player.Name)
 	elseif timeDiff >= 79200 then
-		streak = math.min(streak + 1, 7) -- Level up streak
+		streak = math.min(streak + 1, 7)
 		if streak > 7 then streak = 1 end
 	else
-		return -- Too early
+		return 
 	end
 	
 	local rewardData = REWARD_TABLE[streak]
@@ -109,13 +108,23 @@ local function processDailyLogin(player, data)
 	end
 end
 
--- // INTERNAL: Load Data
+-- // INTERNAL: Load Data (Retry Logic)
 local function setupPlayer(player)
-	if sessionData[player.UserId] then return end -- Already loaded
+	if sessionData[player.UserId] then return end 
 
-	local success, result = pcall(function()
-		return PlayerDataStore:GetAsync(player.UserId)
-	end)
+	local success, result = false, nil
+	local retries = 0
+	
+	-- [UPDATED] Poor man's ProfileService retry loop
+	repeat
+		success, result = pcall(function()
+			return PlayerDataStore:GetAsync(player.UserId)
+		end)
+		if not success then 
+			retries += 1 
+			task.wait(2)
+		end
+	until success or retries >= 3
 
 	if success then
 		if result then
@@ -123,43 +132,56 @@ local function setupPlayer(player)
 		else
 			sessionData[player.UserId] = deepCopy(DEFAULT_DATA)
 		end
+		
+		-- Check GamePass ownership on join (Sync)
+		if MarketplaceService:UserOwnsGamePassAsync(player.UserId, GP_2X_XP) then
+			sessionData[player.UserId].GamePasses.TwoTimesXP = true
+		end
+		
 	else
-		warn("⚠️ Failed to load data for " .. player.Name)
-		player:Kick("Data Load Error. Rejoin.")
+		warn("⚠️ Failed to load data for " .. player.Name .. " after retries.")
+		player:Kick("Data Load Error. Please Rejoin.")
 		return
 	end
 	
 	processDailyLogin(player, sessionData[player.UserId])
 end
 
--- // INTERNAL: Save Data
+-- // INTERNAL: Save Data (Retry Logic)
 local function savePlayer(player)
 	if not sessionData[player.UserId] then return end
 	local userId = player.UserId
 	local dataToSave = sessionData[userId]
 
-	pcall(function()
-		PlayerDataStore:UpdateAsync(userId, function() return dataToSave end)
-	end)
+	local success = false
+	local retries = 0
+	
+	repeat
+		success = pcall(function()
+			PlayerDataStore:UpdateAsync(userId, function() return dataToSave end)
+		end)
+		if not success then
+			retries += 1
+			task.wait(1)
+		end
+	until success or retries >= 3
+	
+	if not success then
+		warn("CRITICAL: Failed to save data for " .. player.Name)
+	end
+	
 	sessionData[userId] = nil
 end
 
--- // --------------------------------------------------------------------------
--- // 🔓 PUBLIC API (The methods other scripts can call)
--- // --------------------------------------------------------------------------
-
--- Get a player's data table.
--- Usage: local data = DataManager:Get(player)
+-- // PUBLIC API
 function DataManager:Get(player)
 	if sessionData[player.UserId] then
 		return sessionData[player.UserId]
 	else
-		warn("⚠️ Attempted to access data for " .. player.Name .. " before it loaded.")
 		return nil
 	end
 end
 
--- Manually adjust Spools (for Shop/Rewards scripts)
 function DataManager:AdjustSpools(player, amount)
 	local data = self:Get(player)
 	if data then
@@ -169,11 +191,15 @@ function DataManager:AdjustSpools(player, amount)
 	return nil
 end
 
--- // --------------------------------------------------------------------------
--- // 🔌 INITIALIZATION
--- // --------------------------------------------------------------------------
+function DataManager:HasPass(player, passName)
+	local data = self:Get(player)
+	if data and data.GamePasses then
+		return data.GamePasses[passName]
+	end
+	return false
+end
 
--- Hook up Events
+-- // INITIALIZATION
 Players.PlayerAdded:Connect(setupPlayer)
 Players.PlayerRemoving:Connect(savePlayer)
 
@@ -181,12 +207,7 @@ game:BindToClose(function()
 	for _, player in pairs(Players:GetPlayers()) do
 		task.spawn(savePlayer, player)
 	end
-	task.wait(2)
+	task.wait(3)
 end)
-
--- Catch players who joined before this module ran (just in case)
-for _, player in pairs(Players:GetPlayers()) do
-	task.spawn(setupPlayer, player)
-end
 
 return DataManager
