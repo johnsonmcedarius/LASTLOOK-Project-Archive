@@ -1,8 +1,8 @@
 -- -------------------------------------------------------------------------------
 -- 📂 PROJECT: LAST LOOK
--- 📝 SCRIPT: StationManager (Server - PLATINUM MASTER)
+-- 📝 SCRIPT: StationManager (Server - ANTI-TROLL UPDATE)
 -- 🛠️ AUTH: Novae Studios
--- 💡 DESC: Progress Engine + Skill Checks + Jam Logic + Scoring + Runway Reveal.
+-- 💡 DESC: Progress Engine + Passive Jam Clearing.
 -- -------------------------------------------------------------------------------
 
 local Players = game:GetService("Players")
@@ -13,10 +13,10 @@ local ServerStorage = game:GetService("ServerStorage")
 local BalanceConfig = require(ReplicatedStorage.Modules.BalanceConfig)
 
 -- STATE
-local ActiveStations = {} -- [Model] = {Progress = 0, Occupants = {Player1, Player2}}
+local ActiveStations = {} -- [Model] = {Progress = 0, Occupants = {}, JamTime = 0}
 local CompletedStationsCount = 0
 
--- REMOTES / EVENTS
+-- REMOTES
 local StationUpdateRemote = Instance.new("RemoteEvent")
 StationUpdateRemote.Name = "StationUpdateEvent"
 StationUpdateRemote.Parent = ReplicatedStorage
@@ -29,13 +29,9 @@ local GlobalPowerRemote = Instance.new("RemoteEvent")
 GlobalPowerRemote.Name = "GlobalPowerEvent"
 GlobalPowerRemote.Parent = ReplicatedStorage
 
--- BINDABLES (Output for Scoring)
--- We use WaitForChild because RoundEndManager creates this
 local AddScoreBindable = ServerStorage:WaitForChild("AddScore", 10)
 
--- // HELPER: Check Player Perks (For Second Look)
 local function playerHasPerk(player, perkName)
-	-- Checks Attribute on player (set by DataManager/Lobby)
 	local perks = player:GetAttribute("EquippedPerks") 
 	if perks and string.find(perks, perkName) then
 		return true
@@ -43,7 +39,6 @@ local function playerHasPerk(player, perkName)
 	return false
 end
 
--- // HELPER: Initialize Station Attributes
 local function setupStation(stationModel)
 	if not stationModel:GetAttribute("WorkRequired") then
 		stationModel:SetAttribute("WorkRequired", BalanceConfig.Station.BaseWorkRequired)
@@ -58,18 +53,17 @@ local function setupStation(stationModel)
 	ActiveStations[stationModel] = {
 		Progress = 0,
 		Max = stationModel:GetAttribute("WorkRequired"),
-		Occupants = {} 
+		Occupants = {},
+		JamTime = 0 -- [NEW] For Passive Repair
 	}
 end
 
--- // INITIALIZE MAP
 local function initMap()
 	for _, station in pairs(CollectionService:GetTagged("Station")) do
 		setupStation(station)
 	end
 end
 
--- // EXPOSED FUNCTION: Add Player to Station (Invoked by InteractionServer)
 local StationBindable = Instance.new("BindableFunction")
 StationBindable.Name = "StationManagerFunc"
 StationBindable.Parent = ServerStorage
@@ -79,7 +73,8 @@ function StationBindable.OnInvoke(action, player, station)
 		local data = ActiveStations[station]
 		if not data then return false end
 		
-		-- Max Occupants Check
+		-- [UPDATED] Can join if jammed now? Maybe to fix it?
+		-- For now, maintain limit
 		if #data.Occupants >= BalanceConfig.Station.MaxOccupants then
 			return false 
 		end
@@ -97,56 +92,44 @@ function StationBindable.OnInvoke(action, player, station)
 		local idx = table.find(data.Occupants, player)
 		if idx then
 			table.remove(data.Occupants, idx)
-			print("🛑 " .. player.Name .. " stopped working.")
 		end
 	end
 	return false
 end
 
--- // FUNCTION: Trigger Completion (Runway Reveal)
 local function completeStation(station)
 	local data = ActiveStations[station]
 	if not data then return end
 	
 	station:SetAttribute("Powered", true)
-	station:SetAttribute("Jammed", false) -- Clear jams if it finishes
+	station:SetAttribute("Jammed", false) 
 	
-	-- Visuals (Neon Lights On)
 	for _, light in pairs(station:GetDescendants()) do
 		if light.Name == "StatusLight" then
-			light.Color = Color3.fromRGB(0, 255, 0) -- Green
+			light.Color = Color3.fromRGB(0, 255, 0)
 			light.Material = Enum.Material.Neon
 		end
 	end
 	
-	-- Global Counter
 	CompletedStationsCount += 1
 	GlobalPowerRemote:FireAllClients(CompletedStationsCount, BalanceConfig.Global.StationsToPower)
 	
-	print("💡 STATION POWERED! (" .. CompletedStationsCount .. "/" .. BalanceConfig.Global.StationsToPower .. ")")
+	ActiveStations[station] = nil 
 	
-	ActiveStations[station] = nil -- Stop tracking logic for this station
-	
-	-- THE RUNWAY REVEAL
 	if CompletedStationsCount >= BalanceConfig.Global.StationsToPower then
-		print("🚪 EXIT GATES POWERED! RUN!")
-		
-		-- 1. Turn on Runway Lights
 		local runwayLights = CollectionService:GetTagged("RunwayLights")
 		for _, light in pairs(runwayLights) do
 			light.Material = Enum.Material.Neon
-			light.Color = Color3.fromRGB(255, 215, 0) -- Gold
+			light.Color = Color3.fromRGB(255, 215, 0)
 			if light:FindFirstChild("PointLight") then
 				light.PointLight.Enabled = true
 			end
 		end
-		
-		-- 2. Unlock Exits (Sets global state for ExitGateManager)
 		workspace:SetAttribute("ExitPowered", true)
 	end
 end
 
--- // MAIN LOOP (The Heartbeat)
+-- // MAIN LOOP
 task.spawn(function()
 	while true do
 		local dt = task.wait(0.2) 
@@ -154,34 +137,35 @@ task.spawn(function()
 		for station, data in pairs(ActiveStations) do
 			if station:GetAttribute("Powered") then continue end
 			
-			-- ⚡ JAM LOGIC: If jammed, skip all progress
+			-- [UPDATED] PASSIVE JAM REPAIR
 			if station:GetAttribute("Jammed") then
+				data.JamTime = (data.JamTime or 0) + dt
+				if data.JamTime >= BalanceConfig.Station.PassiveJamClear then
+					station:SetAttribute("Jammed", false)
+					data.JamTime = 0
+					print("🛠️ Station " .. station.Name .. " passively cleared jam.")
+				end
 				continue 
 			end
 			
 			local occupantCount = #data.Occupants
 			
 			if occupantCount > 0 then
-				-- Calculate Rate
 				local rate = BalanceConfig.Station.BaseWorkRate
 				if occupantCount > 1 then
 					rate = rate * BalanceConfig.Station.DuoMultiplier
 				end
 				
-				-- Apply Progress
 				local progressAdded = rate * dt
 				data.Progress = math.clamp(data.Progress + progressAdded, 0, data.Max)
 				station:SetAttribute("CurrentProgress", data.Progress)
 				
-				-- RNG Skill Check Trigger
 				if math.random() < (BalanceConfig.SkillCheck.TriggerChance * dt) then
 					local victim = data.Occupants[math.random(1, occupantCount)]
-					-- Check for Mythic Perk
 					local hasSecondLook = playerHasPerk(victim, "SecondLook")
 					SkillCheckRemote:FireClient(victim, station, hasSecondLook)
 				end
 				
-				-- Check Completion
 				if data.Progress >= data.Max then
 					completeStation(station)
 				end
@@ -190,49 +174,33 @@ task.spawn(function()
 	end
 end)
 
--- // ⚡ THE HANDSHAKE (Receive Results from Client)
 SkillCheckRemote.OnServerEvent:Connect(function(player, action, station, result)
 	local data = ActiveStations[station]
 	if not data then return end
 
-	-- 1. SKILL CHECK RESULT
 	if action == "Result" then
 		if result == "Great" then
-			-- Bonus Progress
 			data.Progress = math.clamp(data.Progress + BalanceConfig.SkillCheck.BonusProgress, 0, data.Max)
-			
-			-- 💰 SCORE: Award Points for Great Stitch
-			if AddScoreBindable then
-				AddScoreBindable:Fire(player, "GREAT_STITCH")
-			end
+			if AddScoreBindable then AddScoreBindable:Fire(player, "GREAT_STITCH") end
 			
 		elseif result == "Good" then
-			-- No Bonus, clean pass
+			-- No Bonus
 			
 		elseif result == "Miss" then
-			-- Penalty
 			data.Progress = math.clamp(data.Progress - BalanceConfig.SkillCheck.MissPenalty, 0, data.Max)
 			
-			-- ⚡ TRIGGER JAM (Minigame B)
 			station:SetAttribute("Jammed", true)
+			data.JamTime = 0 -- Reset passive timer
 			
-			-- Tell specific client (and maybe others?) to start Jam Game
-			-- For now, just the person who messed up cleans it
 			SkillCheckRemote:FireClient(player, "Jam", station)
-			
-			print("💥 " .. player.Name .. " JAMMED the machine!")
 		end
-		
-		-- Sync Visuals
 		station:SetAttribute("CurrentProgress", data.Progress)
 
-	-- 2. CLEAR JAM
 	elseif action == "ClearJam" then
 		station:SetAttribute("Jammed", false)
-		print("🧵 " .. player.Name .. " cleared the thread jam!")
+		data.JamTime = 0
 	end
 end)
 
--- Init
 initMap()
 CollectionService:GetInstanceAddedSignal("Station"):Connect(setupStation)
