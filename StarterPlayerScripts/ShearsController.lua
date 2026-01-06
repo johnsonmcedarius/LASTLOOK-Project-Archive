@@ -1,30 +1,22 @@
 -- -------------------------------------------------------------------------------
 -- 📂 PROJECT: LAST LOOK
--- 📝 SCRIPT: ShearsController (Client)
+-- 📝 SCRIPT: ShearsController (Client - SKINS UPDATE)
 -- 🛠️ AUTH: Novae Studios
--- 💡 DESC: Handles input, animations, and local feedback for the Killer Weapon.
+-- 💡 DESC: Handles input, animations, and Skin Mesh Swapping.
 -- -------------------------------------------------------------------------------
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ContextActionService = game:GetService("ContextActionService")
-local UserInputService = game:GetService("UserInputService")
 
 local Player = Players.LocalPlayer
 local CombatRemote = ReplicatedStorage:WaitForChild("CombatEvent")
 
--- CONFIG
 local ATTACK_COOLDOWN = 2.5
 local canAttack = true
 
--- ANIMATIONS (Replace with your Asset IDs)
-local ANIM_SWING = "rbxassetid://000000000" -- Wind up + Snap
-local ANIM_WIPE = "rbxassetid://000000000" -- The "Miss" animation
-local ANIM_IDLE = "rbxassetid://000000000"
-
 local loadedAnims = {}
 
--- // HELPER: Play Animation
 local function playAnim(animName)
 	local char = Player.Character
 	if not char then return end
@@ -34,53 +26,60 @@ local function playAnim(animName)
 	
 	if not loadedAnims[animName] then
 		local anim = Instance.new("Animation")
-		anim.AnimationId = animName -- Assuming variable holds ID
+		anim.AnimationId = animName 
 		loadedAnims[animName] = animator:LoadAnimation(anim)
 	end
 	
 	loadedAnims[animName]:Play()
 end
 
--- // FUNCTION: Attack
+-- // HELPER: Apply Skin (MeshID)
+-- [NEW] This should be called when character spawns or skin changes
+local function applyShearsSkin()
+	local char = Player.Character
+	if not char then return end
+	local shears = char:FindFirstChild("Shears")
+	if not shears then return end
+	
+	-- Look for attribute or data
+	local skinMeshId = Player:GetAttribute("EquippedShearsSkin") 
+	-- If no custom skin, keep default
+	
+	if skinMeshId and skinMeshId ~= "" then
+		local mesh = shears:FindFirstChild("Mesh") or Instance.new("SpecialMesh", shears)
+		mesh.MeshId = skinMeshId
+		-- Reset texture if needed or apply matching texture
+	end
+end
+
 local function onAttackInput(actionName, inputState, inputObject)
 	if inputState == Enum.UserInputState.Begin then
-		-- 1. Check if holding Shears
 		local char = Player.Character
 		if not char then return end
 		local shears = char:FindFirstChild("Shears")
-		if not shears then return end -- Don't punch air
+		if not shears then return end 
 		
-		-- 2. Check Debounce
 		if not canAttack then return end
 		canAttack = false
 		
-		-- 3. Visuals
-		-- playAnim(ANIM_SWING) -- Enable when you have IDs
-		
-		-- 4. Tell Server
 		CombatRemote:FireServer("SwingShears")
 		
-		-- 5. Cooldown Logic
 		task.wait(ATTACK_COOLDOWN)
 		canAttack = true
 	end
 end
 
--- // FUNCTION: Pick Up (Bound to a key, or handled by your Context UI)
-local function requestPickup()
-	-- This function should be called by your "InteractionController" 
-	-- when the prompt for "Pick Up" is clicked.
-	-- CombatRemote:FireServer("AttemptPickup", targetCharacter)
-end
-
--- // BIND INPUTS
--- Bind Left Click (PC) and Touch Tap (Mobile)
 ContextActionService:BindAction("ShearsAttack", onAttackInput, true, Enum.UserInputType.MouseButton1, Enum.UserInputType.Touch)
 
--- // LISTENER FOR DOWNED STATE VISUALS
 CombatRemote.OnClientEvent:Connect(function(action, targetPlayer)
 	if action == "VFX_Downed" and targetPlayer == Player then
-		-- Shake camera, turn screen red, blur, etc.
 		print("🩸 I have been scrapped!")
+	elseif action == "ApplySkin" then
+		applyShearsSkin()
 	end
+end)
+
+Player.CharacterAdded:Connect(function()
+	task.wait(1)
+	applyShearsSkin()
 end)
