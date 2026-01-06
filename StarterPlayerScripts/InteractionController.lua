@@ -1,8 +1,8 @@
 -- -------------------------------------------------------------------------------
 -- 📂 PROJECT: LAST LOOK
--- 📝 SCRIPT: InteractionController (Client - MASTER UPDATE)
+-- 📝 SCRIPT: InteractionController (Client - MOBILE FIX)
 -- 🛠️ AUTH: Novae Studios
--- 💡 DESC: Handles "Handshake" (Glow + Context UI). Now with Context Text.
+-- 💡 DESC: Handles "Handshake" (Glow + Context UI). Mobile Button Shifted.
 -- -------------------------------------------------------------------------------
 
 local Players = game:GetService("Players")
@@ -37,8 +37,9 @@ local function setupContextUI()
 	
 	local btn = Instance.new("TextButton")
 	btn.Name = "ActionButton"
-	btn.Size = UDim2.fromOffset(120, 60) -- Wider for text
-	btn.Position = UDim2.new(1, -120, 1, -100) 
+	btn.Size = UDim2.fromOffset(120, 60)
+	-- [UPDATED] Shifted up to avoid Jump Button on Mobile
+	btn.Position = UDim2.new(1, -120, 1, -180) 
 	btn.AnchorPoint = Vector2.new(1, 1)
 	btn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 	btn.TextColor3 = GLOW_COLOR
@@ -66,7 +67,7 @@ local function setupContextUI()
 	end)
 end
 
--- // HELPER: Get Action Text based on Target
+-- // HELPER: Get Action Text
 local function getContextInfo(object)
 	if CollectionService:HasTag(object, "Station") then
 		return "DESIGN", GLOW_COLOR
@@ -77,7 +78,6 @@ local function getContextInfo(object)
 			return "LOCKED", Color3.fromRGB(100, 100, 100)
 		end
 	elseif CollectionService:HasTag(object, "MannequinStand") then
-		-- Check if occupied? For now just show rescue
 		return "RESCUE", RESCUE_COLOR
 	end
 	return "USE", GLOW_COLOR
@@ -137,7 +137,6 @@ RunService.Heartbeat:Connect(function(dt)
 	local mannequins = CollectionService:GetTagged("MannequinStand")
 	
 	local allTargets = {}
-	-- Merge tables (Simple utility)
 	for _, v in pairs(stations) do table.insert(allTargets, v) end
 	for _, v in pairs(exits) do table.insert(allTargets, v) end
 	for _, v in pairs(mannequins) do table.insert(allTargets, v) end
