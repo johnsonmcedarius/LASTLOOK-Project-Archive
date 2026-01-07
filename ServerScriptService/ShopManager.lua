@@ -1,8 +1,8 @@
 -- -------------------------------------------------------------------------------
 -- 📂 PROJECT: LAST LOOK
--- 📝 SCRIPT: ShopManager (Server - GAMEPASS UPDATE)
+-- 📝 SCRIPT: ShopManager (Server - MONETIZATION UPDATE)
 -- 🛠️ AUTH: Novae Studios
--- 💡 DESC: The "Boutique". Weekly Drops, Influence, & GamePasses.
+-- 💡 DESC: The "Boutique". Weekly Drops, Influence, & UPDATED GamePasses.
 -- -------------------------------------------------------------------------------
 
 local Players = game:GetService("Players")
@@ -21,17 +21,19 @@ ShopRemote.Parent = ReplicatedStorage
 -- CONFIG
 local WEEKLY_SEED_OFFSET = 12345 
 
--- [UPDATED] Product & Gamepass IDs
 local PRODUCT_IDS = {
 	SMALL_SPOOLS = 123456, 
 	INFLUENCE_PACK = 654321
 }
 
+-- [UPDATED] Replaced Fast Walk with the Money Makers
 local GAMEPASS_IDS = {
 	VIP_FRONT_ROW = 000000, -- 649 R$
 	SEASON_1 = 000000,      -- 399 R$
-	FAST_WALK = 000000,     -- 149 R$
-	DOUBLE_XP = 000000      -- 299 R$
+	DOUBLE_XP = 000000,     -- 299 R$
+	DOUBLE_SPOOLS = 000000, -- 499 R$ [NEW]
+	POSE_PACK = 000000,     -- 199 R$ [NEW]
+	EXTRA_SLOTS = 000000    -- 99 R$  [NEW]
 }
 
 -- // FUNCTION: Get Weekly "Featured 4"
@@ -142,7 +144,7 @@ MarketplaceService.ProcessReceipt = function(receiptInfo)
 	return Enum.ProductPurchaseDecision.PurchaseGranted
 end
 
--- [NEW] GamePass Finished Handler
+-- [UPDATED] GamePass Handler
 MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player, passId, wasPurchased)
 	if wasPurchased then
 		local data = DataManager:Get(player)
@@ -150,11 +152,17 @@ MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player, passI
 			if passId == GAMEPASS_IDS.DOUBLE_XP then
 				data.GamePasses.TwoTimesXP = true
 				print("🎟️ " .. player.Name .. " bought 2x XP!")
-			elseif passId == GAMEPASS_IDS.VIP_FRONT_ROW then
-				-- Handle VIP logic (e.g., set chat tag)
+			elseif passId == GAMEPASS_IDS.DOUBLE_SPOOLS then
+				data.GamePasses.DoubleSpools = true
+				print("🧵 " .. player.Name .. " bought 2x Spools!")
+			elseif passId == GAMEPASS_IDS.POSE_PACK then
+				data.GamePasses.PosePack = true
+				print("📸 " .. player.Name .. " bought Pose Pack!")
+			elseif passId == GAMEPASS_IDS.EXTRA_SLOTS then
+				data.GamePasses.ExtraSlots = true
+				print("👗 " .. player.Name .. " bought Extra Wardrobe Slots!")
+				-- Trigger immediate refresh if needed
 			end
-			-- Save immediately just in case
-			-- DataManager:Save(player) -- (If we exposed save, otherwise wait for auto-save)
 		end
 	end
 end)
