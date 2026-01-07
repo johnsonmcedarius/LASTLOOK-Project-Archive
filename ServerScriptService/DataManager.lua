@@ -1,8 +1,8 @@
 -- -------------------------------------------------------------------------------
 -- 📂 PROJECT: LAST LOOK
--- 📝 SCRIPT: DataManager (Module - ROBUST EDITION)
+-- 📝 SCRIPT: DataManager (Module - MONETIZATION UPDATE)
 -- 🛠️ AUTH: Novae Studios
--- 💡 DESC: The "Vault". Retry Logic + GamePass Support.
+-- 💡 DESC: The "Vault". Added Schema for new GamePasses.
 -- -------------------------------------------------------------------------------
 
 local DataManager = {} 
@@ -12,11 +12,16 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local MarketplaceService = game:GetService("MarketplaceService")
 
-local DATA_VERSION = "v2_LastLook_Alpha_03" -- [UPDATED] Bumped version
+local DATA_VERSION = "v2_LastLook_Alpha_04" -- [UPDATED] Bumped version for schema change
 local PlayerDataStore = DataStoreService:GetDataStore("PlayerData_" .. DATA_VERSION)
 
--- GAMEPASS IDs (For persistent checks)
-local GP_2X_XP = 000000 -- REPLACE ID
+-- GAMEPASS IDs (For persistent checks on join)
+local GP_IDS = {
+	DOUBLE_XP = 000000,
+	DOUBLE_SPOOLS = 000000,
+	POSE_PACK = 000000,
+	EXTRA_SLOTS = 000000
+}
 
 local DailyRewardRemote = ReplicatedStorage:FindFirstChild("DailyRewardEvent")
 if not DailyRewardRemote then
@@ -50,8 +55,11 @@ local DEFAULT_DATA = {
 		MusicVolume = 1,
 		SFXVolume = 1
 	},
-	GamePasses = { -- [NEW] Cache GamePasses
-		TwoTimesXP = false
+	GamePasses = { -- [UPDATED] Schema
+		TwoTimesXP = false,
+		DoubleSpools = false,
+		PosePack = false,
+		ExtraSlots = false
 	}
 }
 
@@ -70,7 +78,7 @@ local function reconcile(data)
 	for key, value in pairs(DEFAULT_DATA) do
 		if data[key] == nil then data[key] = value end
 	end
-	if not data.GamePasses then data.GamePasses = {} end
+	if not data.GamePasses then data.GamePasses = deepCopy(DEFAULT_DATA.GamePasses) end
 	return data
 end
 
@@ -115,7 +123,6 @@ local function setupPlayer(player)
 	local success, result = false, nil
 	local retries = 0
 	
-	-- [UPDATED] Poor man's ProfileService retry loop
 	repeat
 		success, result = pcall(function()
 			return PlayerDataStore:GetAsync(player.UserId)
@@ -133,10 +140,14 @@ local function setupPlayer(player)
 			sessionData[player.UserId] = deepCopy(DEFAULT_DATA)
 		end
 		
-		-- Check GamePass ownership on join (Sync)
-		if MarketplaceService:UserOwnsGamePassAsync(player.UserId, GP_2X_XP) then
-			sessionData[player.UserId].GamePasses.TwoTimesXP = true
-		end
+		-- [UPDATED] Check GamePass ownership on join (Sync)
+		-- This catches purchases made on the website while offline
+		local data = sessionData[player.UserId]
+		
+		if MarketplaceService:UserOwnsGamePassAsync(player.UserId, GP_IDS.DOUBLE_XP) then data.GamePasses.TwoTimesXP = true end
+		if MarketplaceService:UserOwnsGamePassAsync(player.UserId, GP_IDS.DOUBLE_SPOOLS) then data.GamePasses.DoubleSpools = true end
+		if MarketplaceService:UserOwnsGamePassAsync(player.UserId, GP_IDS.POSE_PACK) then data.GamePasses.PosePack = true end
+		if MarketplaceService:UserOwnsGamePassAsync(player.UserId, GP_IDS.EXTRA_SLOTS) then data.GamePasses.ExtraSlots = true end
 		
 	else
 		warn("⚠️ Failed to load data for " .. player.Name .. " after retries.")
