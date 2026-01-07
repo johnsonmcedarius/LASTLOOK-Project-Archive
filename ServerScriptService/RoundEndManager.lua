@@ -1,8 +1,8 @@
 -- -------------------------------------------------------------------------------
 -- 📂 PROJECT: LAST LOOK
--- 📝 SCRIPT: RoundEndManager (Server - PLATINUM MASTER)
+-- 📝 SCRIPT: RoundEndManager (Server - PAYOUT UPDATE)
 -- 🛠️ AUTH: Novae Studios
--- 💡 DESC: Calculates "Best Dressed" (MVP), Payouts (Spools + XP), and Lobby Reset.
+-- 💡 DESC: Calculates "Best Dressed" (MVP) and Double Spool Payouts.
 -- -------------------------------------------------------------------------------
 
 local Players = game:GetService("Players")
@@ -13,10 +13,9 @@ local DataManager = require(game.ServerScriptService.DataManager)
 
 -- EVENTS
 local RoundOverRemote = Instance.new("RemoteEvent")
-RoundOverRemote.Name = "RoundOverEvent" -- Fires to Client with final stats
+RoundOverRemote.Name = "RoundOverEvent" 
 RoundOverRemote.Parent = ReplicatedStorage
 
--- BINDABLES (Inputs)
 local AddScoreBindable = Instance.new("BindableEvent")
 AddScoreBindable.Name = "AddScore"
 AddScoreBindable.Parent = ServerStorage
@@ -26,7 +25,6 @@ EndGameBindable.Name = "TriggerEndGame"
 EndGameBindable.Parent = ServerStorage
 
 -- BINDABLES (Outputs)
--- We use WaitForChild for AddXP because XPManager might load a split second later
 local AddXPBindable = ServerStorage:WaitForChild("AddXP", 10)
 
 -- CONFIG
@@ -34,17 +32,16 @@ local SCORES = {
 	ESCAPE = 50,
 	GREAT_STITCH = 10,
 	RESCUE = 30,
-	SURVIVAL_MINUTE = 5, -- Points per minute survived (Calculated in loop if needed)
-	KILL = 50, -- Per kill (Saboteur)
-	WIPEOUT = 100 -- All 4 dead (Saboteur)
+	SURVIVAL_MINUTE = 5, 
+	KILL = 50, 
+	WIPEOUT = 100 
 }
 
-local XP_CONVERSION_RATE = 10 -- 1 Score Point = 10 XP
+local XP_CONVERSION_RATE = 10 
 
 -- STATE
-local PlayerScores = {} -- [UserId] = {Total = 0, Breakdown = {}}
+local PlayerScores = {} 
 
--- // HELPER: Init Score Table
 local function initScore(player)
 	if not PlayerScores[player.UserId] then
 		PlayerScores[player.UserId] = {
@@ -58,7 +55,6 @@ local function initScore(player)
 	end
 end
 
--- // FUNCTION: Add Score (Called live during match)
 AddScoreBindable.Event:Connect(function(player, category, amount)
 	if not player then return end
 	initScore(player)
@@ -68,7 +64,6 @@ AddScoreBindable.Event:Connect(function(player, category, amount)
 	
 	data.Total += points
 	
-	-- Track specific stats for the UI breakdown
 	if category == "GREAT_STITCH" then
 		data.Breakdown["Great Stitches"] += 1
 	elseif category == "RESCUE" then
@@ -76,11 +71,8 @@ AddScoreBindable.Event:Connect(function(player, category, amount)
 	elseif category == "ESCAPE" then
 		data.Breakdown["Escaped"] = 1
 	end
-	
-	print("📈 " .. player.Name .. " + " .. points .. " pts (" .. category .. ")")
 end)
 
--- // CORE: Process End Game (Triggered by GameLoop)
 EndGameBindable.Event:Connect(function(winnerTeam)
 	print("📸 FLASHING LIGHTS. CALCULATING MVP.")
 	
@@ -93,30 +85,35 @@ EndGameBindable.Event:Connect(function(winnerTeam)
 		initScore(player)
 		local data = PlayerScores[player.UserId]
 		
-		-- Saboteur Bonus Check
 		if player:GetAttribute("Role") == "Saboteur" then
 			if winnerTeam == "Saboteur" then
 				data.Total += SCORES.WIPEOUT
 			end
 		end
 		
-		-- MVP Check
 		if data.Total > highestScore then
 			highestScore = data.Total
 			MVP = player
 		end
 		
 		-- A. SPOOL PAYOUT (Money)
-		local spoolEarned = math.floor(data.Total) -- 1:1 Ratio for Money
+		local spoolEarned = math.floor(data.Total)
+		
+		-- [UPDATED] Check for Double Spools Pass
+		if DataManager:HasPass(player, "DoubleSpools") then
+			spoolEarned = spoolEarned * 2
+			-- print("🧵 2x Spools Applied for " .. player.Name)
+		end
+		
 		DataManager:AdjustSpools(player, spoolEarned)
 		
 		-- B. XP HANDSHAKE (Leveling)
+		-- XP Manager handles the 2x XP Pass check internally now
 		local xpEarned = math.floor(data.Total * XP_CONVERSION_RATE)
 		if AddXPBindable then
 			AddXPBindable:Fire(player, xpEarned)
 		end
 		
-		-- Add to table to send to clients
 		table.insert(finalStats, {
 			Name = player.Name,
 			UserId = player.UserId,
@@ -126,23 +123,19 @@ EndGameBindable.Event:Connect(function(winnerTeam)
 		})
 	end
 	
-	-- Mark MVP in the table
 	for _, stat in pairs(finalStats) do
 		if MVP and stat.UserId == MVP.UserId then
 			stat.IsMVP = true
 		end
 	end
 	
-	-- 2. Broadcast to Clients (The Vogue Cover)
 	RoundOverRemote:FireAllClients(winnerTeam, finalStats, MVP)
 	
-	-- 3. Reset Data for Next Round
 	PlayerScores = {} 
 	
-	print("🏁 Round Audit Complete. Spools & XP Distributed.")
+	print("🏁 Round Audit Complete.")
 end)
 
--- Cleanup on leave
 Players.PlayerRemoving:Connect(function(player)
 	PlayerScores[player.UserId] = nil
 end)
