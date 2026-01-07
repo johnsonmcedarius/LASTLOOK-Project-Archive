@@ -1,8 +1,8 @@
 -- -------------------------------------------------------------------------------
 -- 📂 PROJECT: LAST LOOK
--- 📝 SCRIPT: StationManager (Server - ANTI-TROLL UPDATE)
+-- 📝 SCRIPT: StationManager (Server - SECURITY UPDATE)
 -- 🛠️ AUTH: Novae Studios
--- 💡 DESC: Progress Engine + Passive Jam Clearing.
+-- 💡 DESC: Progress Engine + Anti-Exploit Skill Checks.
 -- -------------------------------------------------------------------------------
 
 local Players = game:GetService("Players")
@@ -13,7 +13,7 @@ local ServerStorage = game:GetService("ServerStorage")
 local BalanceConfig = require(ReplicatedStorage.Modules.BalanceConfig)
 
 -- STATE
-local ActiveStations = {} -- [Model] = {Progress = 0, Occupants = {}, JamTime = 0}
+local ActiveStations = {} 
 local CompletedStationsCount = 0
 
 -- REMOTES
@@ -33,35 +33,27 @@ local AddScoreBindable = ServerStorage:WaitForChild("AddScore", 10)
 
 local function playerHasPerk(player, perkName)
 	local perks = player:GetAttribute("EquippedPerks") 
-	if perks and string.find(perks, perkName) then
-		return true
-	end
+	if perks and string.find(perks, perkName) then return true end
 	return false
 end
 
 local function setupStation(stationModel)
-	if not stationModel:GetAttribute("WorkRequired") then
-		stationModel:SetAttribute("WorkRequired", BalanceConfig.Station.BaseWorkRequired)
-	end
-	if not stationModel:GetAttribute("CurrentProgress") then
-		stationModel:SetAttribute("CurrentProgress", 0)
-	end
-	if not stationModel:GetAttribute("Jammed") then
-		stationModel:SetAttribute("Jammed", false)
-	end
+	if not stationModel:GetAttribute("WorkRequired") then stationModel:SetAttribute("WorkRequired", BalanceConfig.Station.BaseWorkRequired) end
+	if not stationModel:GetAttribute("CurrentProgress") then stationModel:SetAttribute("CurrentProgress", 0) end
+	if not stationModel:GetAttribute("Jammed") then stationModel:SetAttribute("Jammed", false) end
 	
 	ActiveStations[stationModel] = {
 		Progress = 0,
 		Max = stationModel:GetAttribute("WorkRequired"),
 		Occupants = {},
-		JamTime = 0 -- [NEW] For Passive Repair
+		JamTime = 0,
+		-- [NEW] Security Table: Track who has a valid check pending
+		PendingChecks = {} -- [Player] = true
 	}
 end
 
 local function initMap()
-	for _, station in pairs(CollectionService:GetTagged("Station")) do
-		setupStation(station)
-	end
+	for _, station in pairs(CollectionService:GetTagged("Station")) do setupStation(station) end
 end
 
 local StationBindable = Instance.new("BindableFunction")
@@ -72,26 +64,19 @@ function StationBindable.OnInvoke(action, player, station)
 	if action == "Join" then
 		local data = ActiveStations[station]
 		if not data then return false end
-		
-		-- [UPDATED] Can join if jammed now? Maybe to fix it?
-		-- For now, maintain limit
-		if #data.Occupants >= BalanceConfig.Station.MaxOccupants then
-			return false 
-		end
-		
+		if #data.Occupants >= BalanceConfig.Station.MaxOccupants then return false end
 		if not table.find(data.Occupants, player) then
 			table.insert(data.Occupants, player)
-			print("🧵 " .. player.Name .. " started working on " .. station.Name)
 			return true
 		end
-		
 	elseif action == "Leave" then
 		local data = ActiveStations[station]
 		if not data then return end
-		
 		local idx = table.find(data.Occupants, player)
-		if idx then
+		if idx then 
 			table.remove(data.Occupants, idx)
+			-- Clear any pending checks if they leave mid-check
+			data.PendingChecks[player] = nil 
 		end
 	end
 	return false
@@ -102,7 +87,7 @@ local function completeStation(station)
 	if not data then return end
 	
 	station:SetAttribute("Powered", true)
-	station:SetAttribute("Jammed", false) 
+	station:SetAttribute("Jammed", false)
 	
 	for _, light in pairs(station:GetDescendants()) do
 		if light.Name == "StatusLight" then
@@ -121,9 +106,7 @@ local function completeStation(station)
 		for _, light in pairs(runwayLights) do
 			light.Material = Enum.Material.Neon
 			light.Color = Color3.fromRGB(255, 215, 0)
-			if light:FindFirstChild("PointLight") then
-				light.PointLight.Enabled = true
-			end
+			if light:FindFirstChild("PointLight") then light.PointLight.Enabled = true end
 		end
 		workspace:SetAttribute("ExitPowered", true)
 	end
@@ -137,13 +120,11 @@ task.spawn(function()
 		for station, data in pairs(ActiveStations) do
 			if station:GetAttribute("Powered") then continue end
 			
-			-- [UPDATED] PASSIVE JAM REPAIR
 			if station:GetAttribute("Jammed") then
 				data.JamTime = (data.JamTime or 0) + dt
 				if data.JamTime >= BalanceConfig.Station.PassiveJamClear then
 					station:SetAttribute("Jammed", false)
 					data.JamTime = 0
-					print("🛠️ Station " .. station.Name .. " passively cleared jam.")
 				end
 				continue 
 			end
@@ -152,9 +133,7 @@ task.spawn(function()
 			
 			if occupantCount > 0 then
 				local rate = BalanceConfig.Station.BaseWorkRate
-				if occupantCount > 1 then
-					rate = rate * BalanceConfig.Station.DuoMultiplier
-				end
+				if occupantCount > 1 then rate = rate * BalanceConfig.Station.DuoMultiplier end
 				
 				local progressAdded = rate * dt
 				data.Progress = math.clamp(data.Progress + progressAdded, 0, data.Max)
@@ -162,13 +141,15 @@ task.spawn(function()
 				
 				if math.random() < (BalanceConfig.SkillCheck.TriggerChance * dt) then
 					local victim = data.Occupants[math.random(1, occupantCount)]
+					
+					-- [UPDATED] Set Security Flag
+					data.PendingChecks[victim] = true
+					
 					local hasSecondLook = playerHasPerk(victim, "SecondLook")
 					SkillCheckRemote:FireClient(victim, station, hasSecondLook)
 				end
 				
-				if data.Progress >= data.Max then
-					completeStation(station)
-				end
+				if data.Progress >= data.Max then completeStation(station) end
 			end
 		end
 	end
@@ -179,19 +160,24 @@ SkillCheckRemote.OnServerEvent:Connect(function(player, action, station, result)
 	if not data then return end
 
 	if action == "Result" then
+		-- [CRITICAL] Security Check: Did we ask for this?
+		if not data.PendingChecks[player] then
+			warn("🚨 EXPLOIT DETECTED: " .. player.Name .. " spammed Skill Check!")
+			return -- IGNORE THE RESULT
+		end
+		
+		-- Clear the flag immediately
+		data.PendingChecks[player] = nil
+		
 		if result == "Great" then
 			data.Progress = math.clamp(data.Progress + BalanceConfig.SkillCheck.BonusProgress, 0, data.Max)
 			if AddScoreBindable then AddScoreBindable:Fire(player, "GREAT_STITCH") end
-			
 		elseif result == "Good" then
 			-- No Bonus
-			
 		elseif result == "Miss" then
 			data.Progress = math.clamp(data.Progress - BalanceConfig.SkillCheck.MissPenalty, 0, data.Max)
-			
 			station:SetAttribute("Jammed", true)
-			data.JamTime = 0 -- Reset passive timer
-			
+			data.JamTime = 0 
 			SkillCheckRemote:FireClient(player, "Jam", station)
 		end
 		station:SetAttribute("CurrentProgress", data.Progress)
