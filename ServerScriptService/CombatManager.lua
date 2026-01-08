@@ -1,8 +1,8 @@
 -- -------------------------------------------------------------------------------
 -- 📂 PROJECT: LAST LOOK
--- 📝 SCRIPT: CombatManager (Server)
+-- 📝 SCRIPT: CombatManager (Server - MERCY SHIELD & FF)
 -- 🛠️ AUTH: Novae Studios
--- 💡 DESC: Handles Hitboxes, Damage, Carry, Hooking, and "Trend Forecast" Audio.
+-- 💡 DESC: Handles Hitboxes, FF Prevention, and "Double Team" Immunity.
 -- -------------------------------------------------------------------------------
 
 local Players = game:GetService("Players")
@@ -11,22 +11,18 @@ local CollectionService = game:GetService("CollectionService")
 local RunService = game:GetService("RunService")
 
 -- CONFIG
-local HITBOX_SIZE = Vector3.new(4, 5, 5) -- [UPDATED] Tighter box. No more "Lag Hits".
-local HITBOX_OFFSET = CFrame.new(0, 0, -3) -- Pulled in slightly
+local HITBOX_SIZE = Vector3.new(4, 5, 5) 
+local HITBOX_OFFSET = CFrame.new(0, 0, -3)
 local WINDUP_TIME = 0.5 
 local ATTACK_COOLDOWN = 2.5 
 local MISS_PENALTY_SPEED = 6 
 local MISS_PENALTY_DURATION = 2
+local MERCY_SHIELD_DURATION = 3 -- [NEW] 3 Seconds Immunity after hit
 
--- ANIMATIONS
-local ANIM_CRAWL_ID = "rbxassetid://0" 
-
--- REMOTES
 local CombatRemote = ReplicatedStorage:FindFirstChild("CombatEvent") or Instance.new("RemoteEvent")
 CombatRemote.Name = "CombatEvent"
 CombatRemote.Parent = ReplicatedStorage
 
--- // HELPER: Get/Set State
 local function getState(player)
 	return player:GetAttribute("HealthState") or "Healthy"
 end
@@ -36,28 +32,17 @@ local function setState(player, newState)
 	print("🩸 Status Update: " .. player.Name .. " is now " .. newState)
 end
 
--- // HELPER: Line of Sight (LoS) Check
--- [UPDATED] Added slight tolerance for corners
 local function hasLineOfSight(saboteurChar, victimChar)
 	local origin = saboteurChar.HumanoidRootPart.Position
 	local target = victimChar.HumanoidRootPart.Position
 	local direction = target - origin
-	
 	local rayParams = RaycastParams.new()
 	rayParams.FilterDescendantsInstances = {saboteurChar, victimChar}
 	rayParams.FilterType = Enum.RaycastFilterType.Exclude
-	
 	local rayResult = workspace:Raycast(origin, direction, rayParams)
-	
-	if rayResult then
-		-- If we hit something, it's an obstacle
-		return false 
-	end
-	
-	return true 
+	return not rayResult
 end
 
--- // HELPER: Toggle Massless
 local function setCharacterMassless(character, isMassless)
 	for _, part in pairs(character:GetDescendants()) do
 		if part:IsA("BasePart") then
@@ -71,15 +56,16 @@ local function setCharacterMassless(character, isMassless)
 	end
 end
 
--- // FUNCTION: Carry Survivor
 local function pickupSurvivor(saboteur, survivor)
 	if getState(survivor) ~= "Downed" then return end
-	
+	if survivor:GetAttribute("CarriedBy") then return end
+
 	local sabChar = saboteur.Character
 	local survChar = survivor.Character
 	
 	if sabChar and survChar then
 		setState(survivor, "Carried")
+		survivor:SetAttribute("CarriedBy", saboteur.Name) 
 		setCharacterMassless(survChar, true)
 		
 		local root = survChar:FindFirstChild("HumanoidRootPart")
@@ -101,7 +87,6 @@ local function pickupSurvivor(saboteur, survivor)
 	end
 end
 
--- // FUNCTION: Hook Survivor
 local function hookSurvivor(saboteur, mannequin)
 	local sabChar = saboteur.Character
 	local torso = sabChar:FindFirstChild("UpperTorso") or sabChar:FindFirstChild("Torso")
@@ -114,23 +99,17 @@ local function hookSurvivor(saboteur, mannequin)
 		
 		if survivorPlayer then
 			weld:Destroy()
-			
-			-- Snap to Mannequin
 			survivorRoot.CFrame = mannequin.CFrame * CFrame.new(0, 2, -1)
 			survivorRoot.Anchored = true
-			
 			setCharacterMassless(survivorChar, false)
 			setState(survivorPlayer, "Hooked")
-			
-			-- Reset Saboteur
+			survivorPlayer:SetAttribute("CarriedBy", nil)
 			sabChar.Humanoid.WalkSpeed = 16 
-			
 			CombatRemote:FireAllClients("UpdateHookUI", survivorPlayer)
 		end
 	end
 end
 
--- // FUNCTION: Process Hit
 local function processHit(saboteur, hitList)
 	local hitSomething = false
 	local sabChar = saboteur.Character
@@ -140,6 +119,16 @@ local function processHit(saboteur, hitList)
 		local victim = Players:GetPlayerFromCharacter(char)
 		
 		if victim and victim ~= saboteur then
+			
+			-- 1. FRIENDLY FIRE CHECK
+			if victim:GetAttribute("Role") == "Saboteur" then continue end
+			
+			-- 2. MERCY SHIELD CHECK (The 2v8 Fix)
+			if victim:GetAttribute("Immunity") then 
+				-- print("🛡️ " .. victim.Name .. " blocked damage (Mercy Shield)")
+				continue 
+			end
+			
 			if hasLineOfSight(sabChar, char) then
 			
 				local currentState = getState(victim)
@@ -149,11 +138,21 @@ local function processHit(saboteur, hitList)
 					hitSomething = true
 					CombatRemote:FireAllClients("VFX_Injured", victim)
 					
-					-- [UPDATED] Trend Forecast Audio Trigger
-					if saboteur:GetAttribute("TrendForecast") then
-						CombatRemote:FireClient(victim, "PlaySound", "Heartbeat") -- Scary audio cue
-					end
+					-- [UPDATED] APPLY MERCY SHIELD
+					victim:SetAttribute("Immunity", true)
 					
+					-- Give Speed Boost
+					local hum = char:FindFirstChild("Humanoid")
+					if hum then hum.WalkSpeed = 22 end
+					
+					task.delay(MERCY_SHIELD_DURATION, function()
+						victim:SetAttribute("Immunity", false)
+						if hum and hum.WalkSpeed == 22 then hum.WalkSpeed = 16 end
+					end)
+
+					if saboteur:GetAttribute("TrendForecast") then
+						CombatRemote:FireClient(victim, "PlaySound", "Heartbeat")
+					end
 					break 
 					
 				elseif currentState == "Injured" then
@@ -169,11 +168,9 @@ local function processHit(saboteur, hitList)
 			end
 		end
 	end
-	
 	return hitSomething
 end
 
--- // MAIN HANDLER
 CombatRemote.OnServerEvent:Connect(function(player, action, data)
 	local char = player.Character
 	if not char then return end
