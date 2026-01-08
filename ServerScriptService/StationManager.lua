@@ -1,8 +1,8 @@
 -- -------------------------------------------------------------------------------
 -- 📂 PROJECT: LAST LOOK
--- 📝 SCRIPT: StationManager (Server - SECURITY UPDATE)
+-- 📝 SCRIPT: StationManager (Server - DYNAMIC SCALING)
 -- 🛠️ AUTH: Novae Studios
--- 💡 DESC: Progress Engine + Anti-Exploit Skill Checks.
+-- 💡 DESC: Progress Engine. Reads objectives from GameLoop logic.
 -- -------------------------------------------------------------------------------
 
 local Players = game:GetService("Players")
@@ -47,8 +47,7 @@ local function setupStation(stationModel)
 		Max = stationModel:GetAttribute("WorkRequired"),
 		Occupants = {},
 		JamTime = 0,
-		-- [NEW] Security Table: Track who has a valid check pending
-		PendingChecks = {} -- [Player] = true
+		PendingChecks = {} 
 	}
 end
 
@@ -75,7 +74,6 @@ function StationBindable.OnInvoke(action, player, station)
 		local idx = table.find(data.Occupants, player)
 		if idx then 
 			table.remove(data.Occupants, idx)
-			-- Clear any pending checks if they leave mid-check
 			data.PendingChecks[player] = nil 
 		end
 	end
@@ -97,11 +95,14 @@ local function completeStation(station)
 	end
 	
 	CompletedStationsCount += 1
-	GlobalPowerRemote:FireAllClients(CompletedStationsCount, BalanceConfig.Global.StationsToPower)
+	
+	-- [UPDATED] READ DYNAMIC OBJECTIVE
+	local required = workspace:GetAttribute("RequiredStations") or BalanceConfig.Global.StationsToPower
+	GlobalPowerRemote:FireAllClients(CompletedStationsCount, required)
 	
 	ActiveStations[station] = nil 
 	
-	if CompletedStationsCount >= BalanceConfig.Global.StationsToPower then
+	if CompletedStationsCount >= required then
 		local runwayLights = CollectionService:GetTagged("RunwayLights")
 		for _, light in pairs(runwayLights) do
 			light.Material = Enum.Material.Neon
@@ -142,7 +143,6 @@ task.spawn(function()
 				if math.random() < (BalanceConfig.SkillCheck.TriggerChance * dt) then
 					local victim = data.Occupants[math.random(1, occupantCount)]
 					
-					-- [UPDATED] Set Security Flag
 					data.PendingChecks[victim] = true
 					
 					local hasSecondLook = playerHasPerk(victim, "SecondLook")
@@ -160,13 +160,11 @@ SkillCheckRemote.OnServerEvent:Connect(function(player, action, station, result)
 	if not data then return end
 
 	if action == "Result" then
-		-- [CRITICAL] Security Check: Did we ask for this?
 		if not data.PendingChecks[player] then
-			warn("🚨 EXPLOIT DETECTED: " .. player.Name .. " spammed Skill Check!")
-			return -- IGNORE THE RESULT
+			warn("🚨 EXPLOIT DETECTED: " .. player.Name)
+			return 
 		end
 		
-		-- Clear the flag immediately
 		data.PendingChecks[player] = nil
 		
 		if result == "Great" then
@@ -190,3 +188,11 @@ end)
 
 initMap()
 CollectionService:GetInstanceAddedSignal("Station"):Connect(setupStation)
+
+-- [NEW] Listen for Game Reset to clear counters
+workspace:GetAttributeChangedSignal("RequiredStations"):Connect(function()
+	if not workspace:GetAttribute("RequiredStations") then
+		CompletedStationsCount = 0
+		initMap()
+	end
+end)
