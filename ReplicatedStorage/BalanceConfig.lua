@@ -1,37 +1,37 @@
 -- -------------------------------------------------------------------------------
 -- 📂 PROJECT: LAST LOOK
--- 📝 SCRIPT: BalanceConfig (Module)
+-- 📝 SCRIPT: BalanceConfig (Module - 2v8 SCALE)
 -- 🛠️ AUTH: Novae Studios
--- 💡 DESC: The "Control Panel" for Game Balance. Tweaked for Alpha 2.0.
+-- 💡 DESC: The "Control Panel". Scaled for 2 Killers / 8 Survivors.
 -- -------------------------------------------------------------------------------
 
 local BalanceConfig = {}
 
 -- // STATION MECHANICS
 BalanceConfig.Station = {
-	BaseWorkRequired = 100,    -- [UPDATED] Buffed from 80 to 100. Slow the game down.
-	BaseWorkRate = 1,         -- Units per second (Solo)
+	BaseWorkRequired = 110,    -- [UPDATED] Bumped from 100. Need to slow down 8 people.
+	BaseWorkRate = 1,         
 	
-	DuoMultiplier = 1.5,      -- [UPDATED] Nerfed from 1.8. Duos were too OP with Fast Hands.
-	MaxOccupants = 2,         -- Hard cap on players per station
+	DuoMultiplier = 1.5,      
+	MaxOccupants = 2,         -- Kept at 2 to force spreading out
 	
-	RegressionOnKick = 0.15,  -- Lose 15% progress if Saboteur kicks it
-	RegressionPassive = 0.05, -- Lose 5% per second if left at 99%
+	RegressionOnKick = 0.15,  
+	RegressionPassive = 0.05, 
 	
-	PassiveJamClear = 15,     -- [NEW] Seconds before a Jam clears itself (Anti-Troll)
+	PassiveJamClear = 15,     
 }
 
 -- // SKILL CHECKS
 BalanceConfig.SkillCheck = {
-	TriggerChance = 0.15,     -- 15% chance per second
-	SafeZoneSize = 0.2,       -- 20% of circle
+	TriggerChance = 0.15,     
+	SafeZoneSize = 0.2,       
 	BonusProgress = 2,        
 	MissPenalty = 5,          
 }
 
 -- // GLOBAL
 BalanceConfig.Global = {
-	StationsToPower = 5,
+	StationsToPower = 10, -- [UPDATED] Doubled from 5. Map needs 12-14 Stations spawned.
 }
 
 return BalanceConfig
