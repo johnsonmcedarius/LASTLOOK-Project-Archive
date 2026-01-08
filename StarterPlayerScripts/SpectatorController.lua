@@ -1,8 +1,8 @@
 -- -------------------------------------------------------------------------------
 -- 📂 PROJECT: LAST LOOK
--- 📝 SCRIPT: SpectatorController (Client)
+-- 📝 SCRIPT: SpectatorController (Client - 2v8 UPDATE)
 -- 🛠️ AUTH: Novae Studios
--- 💡 DESC: Handles Spectator Cam when Scrapped/Escaped. Anti-Cheat enabled.
+-- 💡 DESC: Handles Spectator Cam. Hides ALL Saboteurs.
 -- -------------------------------------------------------------------------------
 
 local Players = game:GetService("Players")
@@ -17,11 +17,9 @@ local isSpectating = false
 local targets = {}
 local currentIndex = 1
 
--- UI
 local SpectateHUD = nil
 local NameLabel = nil
 
--- // SETUP UI
 local function setupSpectatorUI()
 	local screen = Instance.new("ScreenGui")
 	screen.Name = "SpectatorHUD"
@@ -31,8 +29,8 @@ local function setupSpectatorUI()
 	local label = Instance.new("TextLabel")
 	label.Name = "TargetName"
 	label.Text = "SPECTATING"
-	label.Font = Enum.Font.GothamBold -- Clean Sans-Serif
-	label.TextColor3 = Color3.fromRGB(255, 215, 0) -- Neon Gold
+	label.Font = Enum.Font.GothamBold 
+	label.TextColor3 = Color3.fromRGB(255, 215, 0) 
 	label.TextSize = 24
 	label.Size = UDim2.fromScale(1, 0.1)
 	label.Position = UDim2.fromScale(0, 0.85)
@@ -44,15 +42,13 @@ local function setupSpectatorUI()
 	SpectateHUD = screen
 end
 
--- // FUNCTION: Refresh Targets (Anti-Cheat)
 local function refreshTargets()
 	targets = {}
 	for _, p in pairs(Players:GetPlayers()) do
 		if p ~= Player then
-			-- ANTI-CHEAT: Check Role. If Saboteur, SKIP.
+			-- [UPDATED] ANTI-CHEAT: Hide ANY Saboteur
 			local role = p:GetAttribute("Role")
 			if role ~= "Saboteur" then
-				-- Only watch alive designers
 				local state = p:GetAttribute("HealthState")
 				if state ~= "Scrapped" and state ~= "Escaped" then
 					table.insert(targets, p)
@@ -62,7 +58,6 @@ local function refreshTargets()
 	end
 end
 
--- // FUNCTION: Update Camera
 local function updateCam()
 	if #targets == 0 then
 		Camera.CameraSubject = nil
@@ -83,7 +78,6 @@ local function updateCam()
 	end
 end
 
--- // INPUT: Cycle
 local function cycle(actionName, inputState)
 	if inputState == Enum.UserInputState.Begin then
 		if actionName == "NextCam" then
@@ -95,11 +89,9 @@ local function cycle(actionName, inputState)
 	end
 end
 
--- // LOOP: Check if we should spectate
 RunService.Heartbeat:Connect(function()
 	local myState = Player:GetAttribute("HealthState")
 	
-	-- If we are Scrapped or Escaped, Start Spectating
 	if (myState == "Scrapped" or myState == "Escaped") and not isSpectating then
 		isSpectating = true
 		if not SpectateHUD then setupSpectatorUI() end
@@ -108,11 +100,9 @@ RunService.Heartbeat:Connect(function()
 		refreshTargets()
 		updateCam()
 		
-		-- Bind Inputs
 		ContextActionService:BindAction("NextCam", cycle, true, Enum.KeyCode.E, Enum.KeyCode.ButtonR1)
 		ContextActionService:BindAction("PrevCam", cycle, true, Enum.KeyCode.Q, Enum.KeyCode.ButtonL1)
 		
-		-- Loop to keep list fresh
 		task.spawn(function()
 			while isSpectating do
 				refreshTargets()
