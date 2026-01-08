@@ -1,8 +1,8 @@
 -- -------------------------------------------------------------------------------
 -- 📂 PROJECT: LAST LOOK
--- 📝 SCRIPT: AccessoryRegistry (Module - SEARCHABLE)
+-- 📝 SCRIPT: AccessoryRegistry (Module - HAUNTED ATELIER UPDATE)
 -- 🛠️ AUTH: Novae Studios
--- 💡 DESC: Cosmetic Items. Now with Categories/Tags for the Search Bar.
+-- 💡 DESC: Cosmetic Items. "Haunted Couture" Collection.
 -- -------------------------------------------------------------------------------
 
 local AccessoryRegistry = {}
@@ -10,45 +10,47 @@ local AccessoryRegistry = {}
 AccessoryRegistry.Definitions = {
 	
 	-- // 👜 BAGS
-	["RootsSmall"] = {
-		Name = "Roots Briefcase (Small)",
+	["MannequinLimbPurse"] = {
+		Name = "Mannequin Limb Purse",
 		Rarity = "Legendary",
-		Price = 8500, -- 🧵
-		Description = "Coated canvas with leather trim. Blues City Bloom.",
+		Price = 6500, -- 🧵
+		Description = "A sleek, designer-style handbag. The 'strap' is a pale, detached mannequin hand gripping your shoulder.",
 		AssetId = 000000,
 		Category = "Bags",
-		Tags = {"leather", "purse", "designer", "blue"}
+		Tags = {"hand", "mannequin", "creepy", "designer", "purse"}
 	},
 	
-	["RootsMedium"] = {
-		Name = "Roots Briefcase (Med)",
+	-- // 😇 HEADWEAR
+	["FloatingPinsHalo"] = {
+		Name = "Floating Pins Halo",
 		Rarity = "Mythic",
-		Price = 15000, -- 🧵
-		Description = "The statement piece. Magnetic patch system.",
-		AssetId = 000000,
-		Category = "Bags",
-		Tags = {"leather", "purse", "designer", "big"}
-	},
-
-	-- // 🧢 APPAREL
-	["DenimTrucker"] = {
-		Name = "901 Trucker Jacket",
-		Rarity = "Rare",
-		Price = 4500, -- 🧵
-		Description = "Heavy denim with graffiti detailing.",
-		AssetId = 000000,
-		Category = "Apparel",
-		Tags = {"jacket", "denim", "blue", "streetwear"}
-	},
-	
-	["NeonVisor"] = {
-		Name = "Atelier Visor",
-		Rarity = "Common",
-		Price = 1500, -- 🧵
-		Description = "Standard issue for floor designers.",
+		Price = 12000, -- 🧵
+		Description = "A ring of rusted sewing needles and safety pins floating and spinning slowly around the head.",
 		AssetId = 000000,
 		Category = "Headwear",
-		Tags = {"hat", "visor", "neon", "cheap"}
+		Tags = {"halo", "pins", "needles", "rust", "floating"}
+	},
+	
+	-- // 🦋 BACK
+	["FragmentedMirrorWings"] = {
+		Name = "Fragmented Mirror Wings",
+		Rarity = "Epic",
+		Price = 8500, -- 🧵
+		Description = "Shards of a shattered designer mirror arranged as wings. Sharp, reflective, and broken.",
+		AssetId = 000000,
+		Category = "Back",
+		Tags = {"wings", "mirror", "glass", "shards", "broken"}
+	},
+
+	-- // 🎭 FACE
+	["ShadowStitchedVeil"] = {
+		Name = "Shadow-Stitched Veil",
+		Rarity = "Rare",
+		Price = 4200, -- 🧵
+		Description = "A sheer, black lace veil covering the face. Glowing red stitches cross over the eyes.",
+		AssetId = 000000,
+		Category = "Face",
+		Tags = {"veil", "lace", "goth", "red", "stitches"}
 	}
 }
 
