@@ -1,8 +1,8 @@
 -- -------------------------------------------------------------------------------
 -- 📂 PROJECT: LAST LOOK
--- 📝 SCRIPT: DataManager (Module - MONETIZATION UPDATE)
+-- 📝 SCRIPT: DataManager (Module - INFLUENCE UPDATE)
 -- 🛠️ AUTH: Novae Studios
--- 💡 DESC: The "Vault". Added Schema for new GamePasses.
+-- 💡 DESC: The "Vault". Updated GamePass IDs and Terminology.
 -- -------------------------------------------------------------------------------
 
 local DataManager = {} 
@@ -12,15 +12,17 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local MarketplaceService = game:GetService("MarketplaceService")
 
-local DATA_VERSION = "v2_LastLook_Alpha_04" -- [UPDATED] Bumped version for schema change
+local DATA_VERSION = "v2_LastLook_Alpha_05" 
 local PlayerDataStore = DataStoreService:GetDataStore("PlayerData_" .. DATA_VERSION)
 
--- GAMEPASS IDs (For persistent checks on join)
+-- [UPDATED] GAMEPASS IDs
 local GP_IDS = {
-	DOUBLE_XP = 000000,
-	DOUBLE_SPOOLS = 000000,
-	POSE_PACK = 000000,
-	EXTRA_SLOTS = 000000
+	VIP = 1663577257,
+	SEASON_PASS = 1663591190,
+	DOUBLE_XP = 1663637133,
+	DOUBLE_SPOOLS = 1660067874,
+	EDITORIAL_PACK = 1662801472, -- Formerly Pose Pack
+	EXTRA_SLOTS = 1662161370
 }
 
 local DailyRewardRemote = ReplicatedStorage:FindFirstChild("DailyRewardEvent")
@@ -31,18 +33,18 @@ if not DailyRewardRemote then
 end
 
 local REWARD_TABLE = {
-	[1] = {Spools = 50, Sigils = 0},
-	[2] = {Spools = 100, Sigils = 0},
-	[3] = {Spools = 200, Sigils = 0},
-	[4] = {Spools = 350, Sigils = 0},
-	[5] = {Spools = 0, Sigils = 1},
-	[6] = {Spools = 500, Sigils = 0},
-	[7] = {Spools = 1000, Sigils = 2},
+	[1] = {Spools = 50, Influence = 0},
+	[2] = {Spools = 100, Influence = 0},
+	[3] = {Spools = 200, Influence = 0},
+	[4] = {Spools = 350, Influence = 0},
+	[5] = {Spools = 0, Influence = 1},
+	[6] = {Spools = 500, Influence = 0},
+	[7] = {Spools = 1000, Influence = 2},
 }
 
 local DEFAULT_DATA = {
 	Spools = 0,
-	Sigils = 0,
+	Influence = 0, -- [UPDATED] Was Sigils
 	XP = 0,
 	Level = 1,
 	Inventory = {},
@@ -55,11 +57,13 @@ local DEFAULT_DATA = {
 		MusicVolume = 1,
 		SFXVolume = 1
 	},
-	GamePasses = { -- [UPDATED] Schema
+	GamePasses = { 
 		TwoTimesXP = false,
 		DoubleSpools = false,
-		PosePack = false,
-		ExtraSlots = false
+		EditorialPack = false,
+		ExtraSlots = false,
+		VIP = false,
+		SeasonPass = false
 	}
 }
 
@@ -78,6 +82,13 @@ local function reconcile(data)
 	for key, value in pairs(DEFAULT_DATA) do
 		if data[key] == nil then data[key] = value end
 	end
+	
+	-- Migration: Sigils -> Influence
+	if data.Sigils then
+		data.Influence = (data.Influence or 0) + data.Sigils
+		data.Sigils = nil
+	end
+	
 	if not data.GamePasses then data.GamePasses = deepCopy(DEFAULT_DATA.GamePasses) end
 	return data
 end
@@ -105,7 +116,7 @@ local function processDailyLogin(player, data)
 	local rewardData = REWARD_TABLE[streak]
 	if rewardData then
 		data.Spools += rewardData.Spools
-		data.Sigils += rewardData.Sigils
+		data.Influence += rewardData.Influence
 		data.DailyLogin.Streak = streak
 		data.DailyLogin.LastLoginTime = now
 		
@@ -116,7 +127,7 @@ local function processDailyLogin(player, data)
 	end
 end
 
--- // INTERNAL: Load Data (Retry Logic)
+-- // INTERNAL: Load Data
 local function setupPlayer(player)
 	if sessionData[player.UserId] then return end 
 
@@ -140,17 +151,17 @@ local function setupPlayer(player)
 			sessionData[player.UserId] = deepCopy(DEFAULT_DATA)
 		end
 		
-		-- [UPDATED] Check GamePass ownership on join (Sync)
-		-- This catches purchases made on the website while offline
+		-- [UPDATED] Sync GamePasses
 		local data = sessionData[player.UserId]
 		
 		if MarketplaceService:UserOwnsGamePassAsync(player.UserId, GP_IDS.DOUBLE_XP) then data.GamePasses.TwoTimesXP = true end
 		if MarketplaceService:UserOwnsGamePassAsync(player.UserId, GP_IDS.DOUBLE_SPOOLS) then data.GamePasses.DoubleSpools = true end
-		if MarketplaceService:UserOwnsGamePassAsync(player.UserId, GP_IDS.POSE_PACK) then data.GamePasses.PosePack = true end
+		if MarketplaceService:UserOwnsGamePassAsync(player.UserId, GP_IDS.EDITORIAL_PACK) then data.GamePasses.EditorialPack = true end
 		if MarketplaceService:UserOwnsGamePassAsync(player.UserId, GP_IDS.EXTRA_SLOTS) then data.GamePasses.ExtraSlots = true end
+		if MarketplaceService:UserOwnsGamePassAsync(player.UserId, GP_IDS.VIP) then data.GamePasses.VIP = true end
+		if MarketplaceService:UserOwnsGamePassAsync(player.UserId, GP_IDS.SEASON_PASS) then data.GamePasses.SeasonPass = true end
 		
 	else
-		warn("⚠️ Failed to load data for " .. player.Name .. " after retries.")
 		player:Kick("Data Load Error. Please Rejoin.")
 		return
 	end
@@ -158,7 +169,7 @@ local function setupPlayer(player)
 	processDailyLogin(player, sessionData[player.UserId])
 end
 
--- // INTERNAL: Save Data (Retry Logic)
+-- // INTERNAL: Save Data
 local function savePlayer(player)
 	if not sessionData[player.UserId] then return end
 	local userId = player.UserId
@@ -177,20 +188,12 @@ local function savePlayer(player)
 		end
 	until success or retries >= 3
 	
-	if not success then
-		warn("CRITICAL: Failed to save data for " .. player.Name)
-	end
-	
 	sessionData[userId] = nil
 end
 
 -- // PUBLIC API
 function DataManager:Get(player)
-	if sessionData[player.UserId] then
-		return sessionData[player.UserId]
-	else
-		return nil
-	end
+	return sessionData[player.UserId]
 end
 
 function DataManager:AdjustSpools(player, amount)
