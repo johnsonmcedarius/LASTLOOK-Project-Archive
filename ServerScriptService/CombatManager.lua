@@ -1,8 +1,8 @@
 -- -------------------------------------------------------------------------------
 -- 📂 PROJECT: LAST LOOK
--- 📝 SCRIPT: CombatManager (Server - MERCY SHIELD & FF)
+-- 📝 SCRIPT: CombatManager (Server - EXPLOIT PROOF)
 -- 🛠️ AUTH: Novae Studios
--- 💡 DESC: Handles Hitboxes, FF Prevention, and "Double Team" Immunity.
+-- 💡 DESC: Handles Combat. Now with Server-Side Distance Validation.
 -- -------------------------------------------------------------------------------
 
 local Players = game:GetService("Players")
@@ -17,7 +17,10 @@ local WINDUP_TIME = 0.5
 local ATTACK_COOLDOWN = 2.5 
 local MISS_PENALTY_SPEED = 6 
 local MISS_PENALTY_DURATION = 2
-local MERCY_SHIELD_DURATION = 3 -- [NEW] 3 Seconds Immunity after hit
+local MERCY_SHIELD_DURATION = 3
+
+-- [NEW] SECURITY CONFIG
+local MAX_INTERACT_DIST = 12 -- Hard cap for interactions (Pickup/Hook)
 
 local CombatRemote = ReplicatedStorage:FindFirstChild("CombatEvent") or Instance.new("RemoteEvent")
 CombatRemote.Name = "CombatEvent"
@@ -123,11 +126,8 @@ local function processHit(saboteur, hitList)
 			-- 1. FRIENDLY FIRE CHECK
 			if victim:GetAttribute("Role") == "Saboteur" then continue end
 			
-			-- 2. MERCY SHIELD CHECK (The 2v8 Fix)
-			if victim:GetAttribute("Immunity") then 
-				-- print("🛡️ " .. victim.Name .. " blocked damage (Mercy Shield)")
-				continue 
-			end
+			-- 2. MERCY SHIELD CHECK
+			if victim:GetAttribute("Immunity") then continue end
 			
 			if hasLineOfSight(sabChar, char) then
 			
@@ -138,10 +138,9 @@ local function processHit(saboteur, hitList)
 					hitSomething = true
 					CombatRemote:FireAllClients("VFX_Injured", victim)
 					
-					-- [UPDATED] APPLY MERCY SHIELD
+					-- Apply Mercy Shield
 					victim:SetAttribute("Immunity", true)
 					
-					-- Give Speed Boost
 					local hum = char:FindFirstChild("Humanoid")
 					if hum then hum.WalkSpeed = 22 end
 					
@@ -174,14 +173,19 @@ end
 CombatRemote.OnServerEvent:Connect(function(player, action, data)
 	local char = player.Character
 	if not char then return end
+	local root = char:FindFirstChild("HumanoidRootPart")
+	if not root then return end -- If they have no root, they can't act.
 	
 	if action == "SwingShears" then
+		-- Server-side hit detection handles distance implicitly by calculating 
+		-- from the server's view of the player's root part.
 		if player:GetAttribute("IsAttacking") then return end
 		player:SetAttribute("IsAttacking", true)
 		
 		task.wait(WINDUP_TIME)
 		
-		local root = char:FindFirstChild("HumanoidRootPart")
+		-- Re-check Root in case they died during windup
+		root = char:FindFirstChild("HumanoidRootPart")
 		if root then
 			local boxCFrame = root.CFrame * HITBOX_OFFSET
 			local overlapParams = OverlapParams.new()
@@ -209,13 +213,33 @@ CombatRemote.OnServerEvent:Connect(function(player, action, data)
 	elseif action == "AttemptPickup" then
 		if data and data:IsA("Model") then
 			local survivor = Players:GetPlayerFromCharacter(data)
-			if survivor then
+			if survivor and survivor.Character then
+				
+				-- [CRITICAL] DISTANCE CHECK
+				local survRoot = survivor.Character:FindFirstChild("HumanoidRootPart")
+				if survRoot then
+					local dist = (root.Position - survRoot.Position).Magnitude
+					if dist > MAX_INTERACT_DIST then
+						warn("🚨 EXPLOIT: " .. player.Name .. " tried to force pickup from " .. math.floor(dist) .. " studs!")
+						return -- Stop the exploit
+					end
+				end
+				
 				pickupSurvivor(player, survivor)
 			end
 		end
 	
 	elseif action == "AttemptHook" then
 		if data and CollectionService:HasTag(data, "MannequinStand") then
+			
+			-- [CRITICAL] DISTANCE CHECK
+			local hookPos = data:GetPivot().Position
+			local dist = (root.Position - hookPos).Magnitude
+			if dist > MAX_INTERACT_DIST then
+				warn("🚨 EXPLOIT: " .. player.Name .. " tried to force hook from " .. math.floor(dist) .. " studs!")
+				return -- Stop the exploit
+			end
+			
 			hookSurvivor(player, data)
 		end
 	end
