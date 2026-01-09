@@ -1,15 +1,15 @@
 -- -------------------------------------------------------------------------------
 -- 📂 PROJECT: LAST LOOK
--- 📝 SCRIPT: InteractionController (Client - MOBILE FIX)
+-- 📝 SCRIPT: InteractionController (Client - AUDIO FIX)
 -- 🛠️ AUTH: Novae Studios
--- 💡 DESC: Handles "Handshake" (Glow + Context UI). Mobile Button Shifted.
+-- 💡 DESC: Handles Handshake, Glow, and Loop Sound.
 -- -------------------------------------------------------------------------------
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local CollectionService = game:GetService("CollectionService")
-local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
 
 local Player = Players.LocalPlayer
 local Character = Player.Character or Player.CharacterAdded:Wait()
@@ -20,15 +20,16 @@ local InteractionRemote = ReplicatedStorage:WaitForChild("InteractionEvent")
 -- CONFIG
 local INTERACTION_RADIUS = 8
 local CHECK_RATE = 0.1 
-local GLOW_COLOR = Color3.fromRGB(0, 255, 127) -- Neon Green
-local RESCUE_COLOR = Color3.fromRGB(255, 215, 0) -- Gold
+local GLOW_COLOR = Color3.fromRGB(0, 255, 127)
+local RESCUE_COLOR = Color3.fromRGB(255, 215, 0)
 
 -- STATE
 local lastCheckTime = 0
 local currentTarget = nil
 local actionButton = nil 
+local loopSound = nil -- [NEW]
 
--- // UI SETUP: Context Button
+-- // SETUP UI
 local function setupContextUI()
 	local screenGui = Instance.new("ScreenGui")
 	screenGui.Name = "InteractionHUD"
@@ -38,8 +39,7 @@ local function setupContextUI()
 	local btn = Instance.new("TextButton")
 	btn.Name = "ActionButton"
 	btn.Size = UDim2.fromOffset(120, 60)
-	-- [UPDATED] Shifted up to avoid Jump Button on Mobile
-	btn.Position = UDim2.new(1, -120, 1, -180) 
+	btn.Position = UDim2.new(1, -120, 1, -180) -- Mobile Friendly
 	btn.AnchorPoint = Vector2.new(1, 1)
 	btn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 	btn.TextColor3 = GLOW_COLOR
@@ -67,52 +67,61 @@ local function setupContextUI()
 	end)
 end
 
--- // HELPER: Get Action Text
-local function getContextInfo(object)
-	if CollectionService:HasTag(object, "Station") then
-		return "DESIGN", GLOW_COLOR
-	elseif CollectionService:HasTag(object, "ExitGate") then
-		if workspace:GetAttribute("ExitPowered") then
-			return "OPEN GATE", GLOW_COLOR
-		else
-			return "LOCKED", Color3.fromRGB(100, 100, 100)
-		end
-	elseif CollectionService:HasTag(object, "MannequinStand") then
-		return "RESCUE", RESCUE_COLOR
+-- // AUDIO MANAGER
+local function playLoopSound(pitchStart)
+	if not loopSound then
+		loopSound = Instance.new("Sound")
+		loopSound.SoundId = "rbxassetid://12221967" -- Replace with Sewing/Repair Loop
+		loopSound.Looped = true
+		loopSound.Volume = 0.5
+		loopSound.Parent = RootPart
 	end
-	return "USE", GLOW_COLOR
+	loopSound.PlaybackSpeed = pitchStart or 0.8
+	loopSound:Play()
 end
 
--- // VISUALS: Manage Highlight
+local function stopLoopSound()
+	if loopSound then loopSound:Stop() end
+end
+
+local function updateSoundPitch(progressRatio)
+	if loopSound and loopSound.IsPlaying then
+		-- Pitch rises from 0.8 to 1.5 as you finish
+		loopSound.PlaybackSpeed = 0.8 + (0.7 * progressRatio)
+	end
+end
+
+-- // VISUALS
 local function setHighlight(object, active)
 	if not object then return end
-	
 	local highlight = object:FindFirstChild("InteractionHighlight")
 	if not highlight then
 		highlight = Instance.new("Highlight")
 		highlight.Name = "InteractionHighlight"
 		highlight.FillTransparency = 1 
-		highlight.OutlineColor = GLOW_COLOR
-		highlight.DepthMode = Enum.HighlightDepthMode.Occluded
 		highlight.Parent = object
 	end
 	
-	local text, color = getContextInfo(object)
+	local text = "USE"
+	local color = GLOW_COLOR
 	
-	if active then
-		highlight.OutlineColor = color
-		highlight.Enabled = true
-		highlight.OutlineTransparency = 0
-		
-		if actionButton then 
-			actionButton.Text = text
-			actionButton.TextColor3 = color
-			actionButton.UIStroke.Color = color
-			actionButton.Visible = true 
-		end
-	else
-		highlight.Enabled = false
-		if actionButton then actionButton.Visible = false end
+	if CollectionService:HasTag(object, "Station") then text = "DESIGN"
+	elseif CollectionService:HasTag(object, "MannequinStand") then 
+		text = "RESCUE" 
+		color = RESCUE_COLOR
+	elseif CollectionService:HasTag(object, "ExitGate") then
+		text = workspace:GetAttribute("ExitPowered") and "OPEN" or "LOCKED"
+		if text == "LOCKED" then color = Color3.fromRGB(100,100,100) end
+	end
+	
+	highlight.OutlineColor = color
+	highlight.Enabled = active
+	
+	if actionButton then 
+		actionButton.Text = text
+		actionButton.TextColor3 = color
+		actionButton.UIStroke.Color = color
+		actionButton.Visible = active 
 	end
 end
 
@@ -131,15 +140,10 @@ RunService.Heartbeat:Connect(function(dt)
 	local closestObject = nil
 	local closestDist = INTERACTION_RADIUS
 
-	-- Check All Interactables
-	local stations = CollectionService:GetTagged("Station")
-	local exits = CollectionService:GetTagged("ExitGate")
-	local mannequins = CollectionService:GetTagged("MannequinStand")
-	
 	local allTargets = {}
-	for _, v in pairs(stations) do table.insert(allTargets, v) end
-	for _, v in pairs(exits) do table.insert(allTargets, v) end
-	for _, v in pairs(mannequins) do table.insert(allTargets, v) end
+	for _, t in pairs(CollectionService:GetTagged("Station")) do table.insert(allTargets, t) end
+	for _, t in pairs(CollectionService:GetTagged("ExitGate")) do table.insert(allTargets, t) end
+	for _, t in pairs(CollectionService:GetTagged("MannequinStand")) do table.insert(allTargets, t) end
 	
 	for _, object in pairs(allTargets) do
 		local targetPart = object:IsA("Model") and object.PrimaryPart or object
@@ -156,6 +160,24 @@ RunService.Heartbeat:Connect(function(dt)
 		if currentTarget then setHighlight(currentTarget, false) end
 		if closestObject then setHighlight(closestObject, true) end
 		currentTarget = closestObject
+	end
+end)
+
+-- REMOTE LISTENER FOR SOUND
+InteractionRemote.OnClientEvent:Connect(function(action, data)
+	if action == "TaskStarted" then
+		playLoopSound(0.8)
+		-- If you have a StationUIConnector, it can call updateSoundPitch
+		-- Or listen to attribute changes here:
+		if data and data:IsA("Model") then
+			data:GetAttributeChangedSignal("CurrentProgress"):Connect(function()
+				local cur = data:GetAttribute("CurrentProgress") or 0
+				local max = data:GetAttribute("WorkRequired") or 100
+				updateSoundPitch(cur/max)
+			end)
+		end
+	elseif action == "TaskStopped" or action == "TaskFailed" then
+		stopLoopSound()
 	end
 end)
 
