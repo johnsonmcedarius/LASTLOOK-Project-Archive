@@ -28,12 +28,12 @@ local PRODUCT_IDS = {
 
 -- [UPDATED] Replaced Fast Walk with the Money Makers
 local GAMEPASS_IDS = {
-	VIP_FRONT_ROW = 000000, -- 649 R$
-	SEASON_1 = 000000,      -- 399 R$
-	DOUBLE_XP = 000000,     -- 299 R$
-	DOUBLE_SPOOLS = 000000, -- 499 R$ [NEW]
-	POSE_PACK = 000000,     -- 199 R$ [NEW]
-	EXTRA_SLOTS = 000000    -- 99 R$  [NEW]
+	VIP_FRONT_ROW = 1663577257, -- 649 R$
+	SEASON_1 = 1663591190,      -- 399 R$
+	DOUBLE_XP = 1663637133,     -- 299 R$
+	DOUBLE_SPOOLS = 1660067874, -- 499 R$ [NEW]
+	POSE_PACK = 1662801472,     -- 199 R$ [NEW]
+	EXTRA_SLOTS = 1662161370    -- 99 R$  [NEW]
 }
 
 -- // FUNCTION: Get Weekly "Featured 4"
@@ -134,11 +134,11 @@ MarketplaceService.ProcessReceipt = function(receiptInfo)
 	
 	if receiptInfo.ProductId == PRODUCT_IDS.INFLUENCE_PACK then
 		data.Influence = (data.Influence or 0) + 5
-		print("💸 " .. player.Name .. " bought 5 Influence!")
+		print("�??� " .. player.Name .. " bought 5 Influence!")
 		
 	elseif receiptInfo.ProductId == PRODUCT_IDS.SMALL_SPOOLS then
 		data.Spools = data.Spools + 1500
-		print("💸 " .. player.Name .. " bought Spools!")
+		print("�??� " .. player.Name .. " bought Spools!")
 	end
 	
 	return Enum.ProductPurchaseDecision.PurchaseGranted
@@ -151,16 +151,16 @@ MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player, passI
 		if data then
 			if passId == GAMEPASS_IDS.DOUBLE_XP then
 				data.GamePasses.TwoTimesXP = true
-				print("🎟️ " .. player.Name .. " bought 2x XP!")
+				print("�???️ " .. player.Name .. " bought 2x XP!")
 			elseif passId == GAMEPASS_IDS.DOUBLE_SPOOLS then
 				data.GamePasses.DoubleSpools = true
-				print("🧵 " .. player.Name .. " bought 2x Spools!")
+				print("�?�� " .. player.Name .. " bought 2x Spools!")
 			elseif passId == GAMEPASS_IDS.POSE_PACK then
 				data.GamePasses.PosePack = true
-				print("📸 " .. player.Name .. " bought Pose Pack!")
+				print("�??� " .. player.Name .. " bought Pose Pack!")
 			elseif passId == GAMEPASS_IDS.EXTRA_SLOTS then
 				data.GamePasses.ExtraSlots = true
-				print("👗 " .. player.Name .. " bought Extra Wardrobe Slots!")
+				print("�??? " .. player.Name .. " bought Extra Wardrobe Slots!")
 				-- Trigger immediate refresh if needed
 			end
 		end
