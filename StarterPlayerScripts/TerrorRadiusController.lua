@@ -1,8 +1,8 @@
 -- -------------------------------------------------------------------------------
 -- 📂 PROJECT: LAST LOOK
--- 📝 SCRIPT: TerrorRadiusController (Client - 2v8 UPDATE)
+-- 📝 SCRIPT: TerrorRadiusController (Client - NOIR VIBE)
 -- 🛠️ AUTH: Novae Studios
--- 💡 DESC: Calculates dist to NEAREST Saboteur. Multi-Killer support.
+-- 💡 DESC: Noir Horror visuals. Saturation drops + Contrast spikes near killer.
 -- -------------------------------------------------------------------------------
 
 local Players = game:GetService("Players")
@@ -19,32 +19,25 @@ local RootPart = Character:WaitForChild("HumanoidRootPart")
 
 -- CONFIG
 local MAX_TERROR_RADIUS = 60
-local PULSE_RATE_CLOSE = 0.5 
-local PULSE_RATE_FAR = 2.0
 
-local vignette = Lighting:FindFirstChild("TerrorVignette") or Instance.new("ColorCorrectionEffect")
-vignette.Name = "TerrorVignette"
+local vignette = Lighting:FindFirstChild("TerrorFilter") or Instance.new("ColorCorrectionEffect")
+vignette.Name = "TerrorFilter"
 vignette.Parent = Lighting
+vignette.Saturation = 0
+vignette.Contrast = 0
 vignette.TintColor = Color3.new(1, 1, 1)
-
-local lastPulse = 0
 
 -- // FUNCTION: Find Closest Saboteur
 local function getClosestSaboteurDist()
 	local closestDist = 9999
-	
 	for _, p in pairs(Players:GetPlayers()) do
-		-- [UPDATED] Check Role AND ensure it's not me (if I am also a Saboteur)
 		if p:GetAttribute("Role") == "Saboteur" and p ~= Player then
 			if p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
 				local dist = (RootPart.Position - p.Character.HumanoidRootPart.Position).Magnitude
-				if dist < closestDist then
-					closestDist = dist
-				end
+				if dist < closestDist then closestDist = dist end
 			end
 		end
 	end
-	
 	return closestDist
 end
 
@@ -55,28 +48,35 @@ RunService.Heartbeat:Connect(function(dt)
 		return
 	end
 	
-	-- [UPDATED] Dynamic scan every frame (optimized for < 12 players)
 	local dist = getClosestSaboteurDist()
 			
 	if dist <= MAX_TERROR_RADIUS then
-		-- 1. Audio
+		local intensity = 1 - (dist / MAX_TERROR_RADIUS) -- 0 to 1 (1 is super close)
+		
+		-- 1. AUDIO
 		SoundManager.UpdateTerror(dist, MAX_TERROR_RADIUS)
 		
-		-- 2. Visual Pulse
-		local intensity = 1 - (dist / MAX_TERROR_RADIUS) 
-		local pulseSpeed = PULSE_RATE_FAR - ((PULSE_RATE_FAR - PULSE_RATE_CLOSE) * intensity)
+		-- 2. VISUALS (The Noir Effect)
+		-- Desaturate the world (Go Black & White)
+		local satTarget = -1 * intensity 
+		-- Increase Contrast (Make shadows harsh)
+		local conTarget = 0.5 * intensity
+		-- Tint slightly Red (Blood Noir)
+		local tintVal = 255 - (50 * intensity)
+		local tintTarget = Color3.fromRGB(255, tintVal, tintVal)
 		
-		if (tick() - lastPulse) > pulseSpeed then
-			lastPulse = tick()
-			local redTint = Color3.fromRGB(255, 200 - (200*intensity), 200 - (200*intensity))
-			TweenService:Create(vignette, TweenInfo.new(0.1), {TintColor = redTint}):Play()
-			task.delay(0.1, function()
-				TweenService:Create(vignette, TweenInfo.new(0.3), {TintColor = Color3.new(1,1,1)}):Play()
-			end)
-		end
+		TweenService:Create(vignette, TweenInfo.new(0.5), {
+			Saturation = satTarget,
+			Contrast = conTarget,
+			TintColor = tintTarget
+		}):Play()
 	else
 		-- Reset
 		SoundManager.UpdateTerror(100, 100) 
-		vignette.TintColor = Color3.new(1,1,1)
+		TweenService:Create(vignette, TweenInfo.new(1), {
+			Saturation = 0,
+			Contrast = 0,
+			TintColor = Color3.new(1,1,1)
+		}):Play()
 	end
 end)
