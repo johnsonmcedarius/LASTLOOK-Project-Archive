@@ -1,141 +1,147 @@
 -- -------------------------------------------------------------------------------
 -- 📂 PROJECT: LAST LOOK
--- 📝 SCRIPT: WardrobeController (Client)
--- 🛠️ AUTH: Novae Studios
--- 💡 DESC: Handles the Loadout UI (Equipping/Unlocking Slots).
+-- 📝 SCRIPT: WardrobeController (Client - AUTO BUILD VERSION)
 -- -------------------------------------------------------------------------------
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
 
 local PerkRegistry = require(ReplicatedStorage.Modules.PerkRegistry)
 local WardrobeRemote = ReplicatedStorage:WaitForChild("WardrobeEvent")
 
--- CONFIG
-local SLOT_PRICES = {
-	[2] = "Level 10 + 2,500 🧵",
-	[3] = "Level 25 + 10,000 🧵"
-}
-
--- STATE
-local selectedSlot = 1 -- Default to first slot
+local selectedSlot = 1
 local WardrobeHUD = nil
+local InventoryGrid = nil
 
--- // HELPER: Get Perk Info
-local function getPerkName(id)
-	if not id or id == "" then return "EMPTY" end
-	local def = PerkRegistry.GetPerk(id)
-	return def and def.Name or "Unknown"
+-- 1. AUTO-BUILD UI
+local function createWardrobeUI()
+	local screen = Instance.new("ScreenGui")
+	screen.Name = "WardrobeGUI"
+	screen.ResetOnSpawn = false
+	screen.Enabled = false -- Start closed
+	screen.Parent = PlayerGui
+	WardrobeHUD = screen
+
+	-- Main BG
+	local main = Instance.new("Frame")
+	main.Size = UDim2.fromOffset(500, 400)
+	main.Position = UDim2.fromScale(0.5, 0.5)
+	main.AnchorPoint = Vector2.new(0.5, 0.5)
+	main.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+	main.Parent = screen
+	
+	-- Close Button (Press M to toggle, but here is a button too)
+	local closeBtn = Instance.new("TextButton")
+	closeBtn.Size = UDim2.fromOffset(30, 30)
+	closeBtn.Position = UDim2.fromScale(1, 0)
+	closeBtn.AnchorPoint = Vector2.new(1, 0)
+	closeBtn.Text = "X"
+	closeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+	closeBtn.Parent = main
+	closeBtn.MouseButton1Click:Connect(function() screen.Enabled = false end)
+
+	-- 3 Slots at the top
+	for i = 1, 3 do
+		local slot = Instance.new("TextButton")
+		slot.Name = "Slot"..i
+		slot.Size = UDim2.fromOffset(100, 100)
+		slot.Position = UDim2.fromOffset(20 + ((i-1)*120), 20)
+		slot.Text = "SLOT " .. i
+		slot.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+		slot.Parent = main
+		
+		-- Helper Logic for clicking a slot
+		slot.MouseButton1Click:Connect(function()
+			selectedSlot = i
+			print("Selected Slot " .. i)
+			-- Visual feedback
+			for j=1,3 do main["Slot"..j].BorderColor3 = Color3.new(0,0,0) end
+			slot.BorderColor3 = Color3.new(1,1,0) -- Yellow highlight
+		end)
+	end
+	
+	-- Inventory Grid (Bottom half)
+	InventoryGrid = Instance.new("ScrollingFrame")
+	InventoryGrid.Name = "InventoryGrid"
+	InventoryGrid.Size = UDim2.fromScale(0.9, 0.5)
+	InventoryGrid.Position = UDim2.fromScale(0.05, 0.45)
+	InventoryGrid.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+	InventoryGrid.Parent = main
+	
+	local layout = Instance.new("UIGridLayout")
+	layout.CellSize = UDim2.fromOffset(80, 80)
+	layout.Parent = InventoryGrid
 end
 
--- // FUNCTION: Update Slots Visuals
-local function updateSlots()
-	if not WardrobeHUD then return end
+-- 2. LOGIC
+local function buildInventory()
+	if not InventoryGrid then return end
 	
-	-- Get current loadout from Attribute (Fast read from Server update)
+	-- Clear old items
+	for _, child in pairs(InventoryGrid:GetChildren()) do
+		if child:IsA("TextButton") then child:Destroy() end
+	end
+	
+	local invString = Player:GetAttribute("Inventory") or ""
+	
+	for id, info in pairs(PerkRegistry.Definitions) do
+		-- Only show owned items
+		if string.find(invString, id) then
+			local btn = Instance.new("TextButton")
+			btn.Name = id
+			btn.Text = info.Name
+			btn.TextWrapped = true
+			btn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+			btn.Parent = InventoryGrid
+			
+			btn.MouseButton1Click:Connect(function()
+				WardrobeRemote:FireServer("Equip", { PerkId = id, SlotNum = selectedSlot })
+			end)
+		end
+	end
+end
+
+local function updateSlots()
 	local equippedRaw = Player:GetAttribute("EquippedPerks") or ""
 	local equipped = string.split(equippedRaw, ",")
 	
-	-- Update Slot UI Elements (Tell Nerd to name buttons Slot1, Slot2, Slot3)
-	for i = 1, 3 do
-		local slotBtn = WardrobeHUD:FindFirstChild("Slot" .. i, true)
-		if slotBtn then
-			local perkId = equipped[i]
-			local label = slotBtn:FindFirstChild("PerkName")
-			local icon = slotBtn:FindFirstChild("Icon")
-			local lock = slotBtn:FindFirstChild("LockOverlay")
-			
-			-- 1. Check Unlock Status (UI Simulation)
-			local isLocked = false
-			local playerLevel = Player:GetAttribute("Level") or 1
-			
-			if i == 2 and playerLevel < 10 then isLocked = true end
-			if i == 3 and playerLevel < 25 then isLocked = true end
-			
-			if isLocked then
-				if label then label.Text = "LOCKED" end
-				if lock then 
-					lock.Visible = true 
-					local costLbl = lock:FindFirstChild("CostLabel")
-					if costLbl then costLbl.Text = SLOT_PRICES[i] end
+	if WardrobeHUD then
+		local main = WardrobeHUD:FindFirstChild("Frame")
+		for i = 1, 3 do
+			local slotBtn = main:FindFirstChild("Slot"..i)
+			if slotBtn then
+				local perkId = equipped[i]
+				if perkId and perkId ~= "" and PerkRegistry.GetPerk(perkId) then
+					slotBtn.Text = PerkRegistry.GetPerk(perkId).Name
+				else
+					slotBtn.Text = "EMPTY"
 				end
-				
-				-- Click to Unlock
-				slotBtn.MouseButton1Click:Connect(function()
-					WardrobeRemote:FireServer("UnlockSlot", {SlotNum = i})
-				end)
-			else
-				if lock then lock.Visible = false end
-				if label then label.Text = getPerkName(perkId) end
-				
-				-- Selection Logic
-				slotBtn.MouseButton1Click:Connect(function()
-					selectedSlot = i
-					print("Selected Slot " .. i)
-					-- Tell Nerd to add a "SelectedBorder" frame to toggle visible here
-				end)
 			end
 		end
 	end
 end
 
--- // FUNCTION: Build Inventory Grid (For equipping)
-local function buildInventory()
-	if not WardrobeHUD then return end
-	local grid = WardrobeHUD:FindFirstChild("InventoryGrid", true)
-	if not grid then return end
-	
-	-- Clear old
-	for _, child in pairs(grid:GetChildren()) do
-		if child:IsA("ImageButton") then child:Destroy() end
-	end
-	
-	-- Get Inventory from Attribute
-	local invString = Player:GetAttribute("Inventory") or ""
-	
-	-- Template
-	local template = grid.Parent:FindFirstChild("CardTemplate")
-	if not template then return end
-	
-	-- Loop through Registry to show Owned Items
-	for id, info in pairs(PerkRegistry.Definitions) do
-		-- Only show owned perks
-		if string.find(invString, id) then
-			local card = template:Clone()
-			card.Name = id
-			card.Visible = true
-			
-			local nameLbl = card:FindFirstChild("ItemName")
-			if nameLbl then nameLbl.Text = info.Name end
-			
-			-- Equip Click
-			card.MouseButton1Click:Connect(function()
-				print("Attempting to equip " .. id .. " to Slot " .. selectedSlot)
-				WardrobeRemote:FireServer("Equip", {
-					PerkId = id,
-					SlotNum = selectedSlot
-				})
-			end)
-			
-			card.Parent = grid
-		end
-	end
-end
-
--- // EVENTS
-WardrobeRemote.OnClientEvent:Connect(function(action, data)
+-- Events
+WardrobeRemote.OnClientEvent:Connect(function(action)
 	if action == "EquipSuccess" or action == "UnlockSuccess" then
 		updateSlots()
-		-- Optional: Play a "Snap" sound effect here
 	end
 end)
 
--- // EXPORT: Open Wardrobe
--- Call this function when the Wardrobe Button is clicked in the main menu
-_G.OpenWardrobe = function(screenGui)
-	WardrobeHUD = screenGui
-	updateSlots()
-	buildInventory()
-end
+-- Init
+createWardrobeUI()
+
+-- Input to Open (Press M)
+UserInputService.InputBegan:Connect(function(input, gp)
+	if gp then return end
+	if input.KeyCode == Enum.KeyCode.M then
+		WardrobeHUD.Enabled = not WardrobeHUD.Enabled
+		if WardrobeHUD.Enabled then
+			updateSlots()
+			buildInventory()
+		end
+	end
+end)
