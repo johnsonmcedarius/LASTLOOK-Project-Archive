@@ -9,11 +9,11 @@ local BalanceConfig = {}
 
 -- // STATION MECHANICS
 BalanceConfig.Station = {
-	BaseWorkRequired = 110,    -- [UPDATED] Bumped from 100. Need to slow down 8 people.
+	BaseWorkRequired = 110,    -- [PACING] Keeping this high for 8 players. Playtest this.
 	BaseWorkRate = 1,         
 	
 	DuoMultiplier = 1.5,      
-	MaxOccupants = 2,         -- Kept at 2 to force spreading out
+	MaxOccupants = 2,         -- Force the spread.
 	
 	RegressionOnKick = 0.15,  
 	RegressionPassive = 0.05, 
@@ -31,7 +31,7 @@ BalanceConfig.SkillCheck = {
 
 -- // GLOBAL
 BalanceConfig.Global = {
-	StationsToPower = 10, -- [UPDATED] Doubled from 5. Map needs 12-14 Stations spawned.
+	StationsToPower = 10, -- Map needs 12-14 Stations spawned.
 }
 
 return BalanceConfig
