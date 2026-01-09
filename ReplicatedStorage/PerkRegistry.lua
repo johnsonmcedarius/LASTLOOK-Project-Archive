@@ -1,20 +1,19 @@
 -- -------------------------------------------------------------------------------
 -- 📂 PROJECT: LAST LOOK
--- 📝 SCRIPT: PerkRegistry (Module - LAUNCH COLLECTION)
+-- 📝 SCRIPT: PerkRegistry (Module - INFLUENCE UPDATE)
 -- 🛠️ AUTH: Novae Studios
--- 💡 DESC: The 12 Launch Perks. Influence (📍) Prices included.
+-- 💡 DESC: Influence (📍) Prices updated.
 -- -------------------------------------------------------------------------------
 
 local PerkRegistry = {}
 
 PerkRegistry.Definitions = {
 	
-	-- // 🧵 DESIGNER PERKS (SURVIVORS) ---------------------------------------
-	
+	-- // 🧵 DESIGNER PERKS
 	["RunwayStrut"] = {
 		Name = "Runway Strut",
 		Rarity = "Rare",
-		Price = 10, -- 📍
+		Price = 10, -- 📍 Influence
 		Description = "Sprint at 150% speed for 3s after vaulting.",
 		Stats = {SpeedMult = 1.5, Duration = 3, Cooldown = 40}
 	},
@@ -59,8 +58,7 @@ PerkRegistry.Definitions = {
 		Stats = {Range = 30}
 	},
 
-	-- // ✂️ SABOTEUR PERKS (KILLERS) -----------------------------------------
-	
+	-- // ✂️ SABOTEUR PERKS
 	["RippedSeam"] = {
 		Name = "Ripped Seam",
 		Rarity = "Common",
@@ -110,9 +108,14 @@ PerkRegistry.Definitions = {
 	}
 }
 
--- // HELPER: Get Perk Data
 function PerkRegistry.GetPerk(perkId)
 	return PerkRegistry.Definitions[perkId]
+end
+
+function PerkRegistry.GetStat(perkId, statName)
+	local def = PerkRegistry.Definitions[perkId]
+	if def and def.Stats then return def.Stats[statName] end
+	return nil
 end
 
 return PerkRegistry
