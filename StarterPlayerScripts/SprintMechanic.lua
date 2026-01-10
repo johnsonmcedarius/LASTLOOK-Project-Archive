@@ -1,118 +1,58 @@
 -- -------------------------------------------------------------------------------
 -- 📂 PROJECT: LAST LOOK
--- 📝 SCRIPT: SprintMechanic (Client - CAM BOB ADDED)
+-- 📝 SCRIPT: SprintMechanic (Client - ATTRIBUTE SYSTEM)
 -- 🛠️ AUTH: Novae Studios
--- 💡 DESC: Handles Stamina + "Camera Bob" for movement feedback.
+-- 💡 DESC: The "Brain" of movement. Calculates speed from ALL attributes.
 -- -------------------------------------------------------------------------------
 
-local ContextActionService = game:GetService("ContextActionService")
-local TweenService = game:GetService("TweenService")
 local Players = game:GetService("Players")
+local ContextActionService = game:GetService("ContextActionService")
 local RunService = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local PerkRegistry = require(ReplicatedStorage.Modules.PerkRegistry)
 
 local Player = Players.LocalPlayer
-local Camera = workspace.CurrentCamera
-local Character = Player.Character or Player.CharacterAdded:Wait()
-local Humanoid = Character:WaitForChild("Humanoid")
-local RootPart = Character:WaitForChild("HumanoidRootPart")
 
--- CONFIG
-local WALK_SPEED = 16
-local BASE_RUN_MULTIPLIER = PerkRegistry.GetStat("RunwayStrut", "SpeedMultiplier") or 1.35
-local RUN_SPEED = WALK_SPEED * BASE_RUN_MULTIPLIER
-local EXHAUSTED_SPEED = 12 
+-- BASE SPEEDS
+local SPEED_WALK = 16
+local SPEED_RUN = 24
+local SPEED_LIMPY = 12
+local SPEED_BOOST = 28 -- Mercy hit speed
 
-local MAX_STAMINA = 100
-local STAMINA_DRAIN = 15
-local STAMINA_REGEN = 10
-local REGEN_DELAY = 1.5
+local function updateSpeed()
+	local char = Player.Character
+	if not char then return end
+	local hum = char:FindFirstChild("Humanoid")
+	if not hum then return end
+	
+	local finalSpeed = SPEED_WALK
+	
+	-- 1. Check Attributes
+	local isSprinting = Player:GetAttribute("IsSprinting")
+	local health = Player:GetAttribute("HealthState")
+	local status = Player:GetAttribute("StatusEffect")
+	local exhaust = Player:GetAttribute("Exhausted")
+	
+	-- 2. Hierarchy Logic
+	if status == "SpeedBoost" then
+		finalSpeed = SPEED_BOOST
+	elseif isSprinting and not exhaust then
+		finalSpeed = SPEED_RUN
+	elseif health == "Injured" and not isSprinting then
+		-- Optional: Limp when injured? Or keep standard?
+		-- finalSpeed = SPEED_WALK 
+	end
+	
+	-- 3. Apply
+	hum.WalkSpeed = finalSpeed
+end
 
--- BOB CONFIG
-local BOB_SPEED = 14
-local BOB_INTENSITY = 0.3
-
--- STATE
-local currentStamina = MAX_STAMINA
-local isSprinting = false
-local isExhausted = false
-local timeSinceSprint = 0
-
-local fovSprint = TweenInfo.new(0.5, Enum.EasingStyle.Sine)
-local fovNormal = TweenInfo.new(0.5, Enum.EasingStyle.Sine)
-
-local function handleSprint(actionName, inputState, inputObject)
-	if inputState == Enum.UserInputState.Begin then
-		if not isExhausted then isSprinting = true end
-	elseif inputState == Enum.UserInputState.End then
-		isSprinting = false
+local function toggleSprint(name, state)
+	if state == Enum.UserInputState.Begin then
+		Player:SetAttribute("IsSprinting", true)
+	elseif state == Enum.UserInputState.End then
+		Player:SetAttribute("IsSprinting", false)
 	end
 end
 
-ContextActionService:BindAction("Sprint", handleSprint, true, Enum.KeyCode.LeftShift, Enum.KeyCode.ButtonX)
-ContextActionService:SetTitle("Sprint", "RUN")
-ContextActionService:SetPosition("Sprint", UDim2.new(0.2, 0, 0.5, 0))
+ContextActionService:BindAction("SprintAction", toggleSprint, true, Enum.KeyCode.LeftShift, Enum.KeyCode.ButtonX)
 
-RunService.Heartbeat:Connect(function(dt)
-	local moving = Humanoid.MoveDirection.Magnitude > 0
-	
-	-- 1. STAMINA & SPEED
-	if isSprinting and moving then
-		currentStamina = math.clamp(currentStamina - (STAMINA_DRAIN * dt), 0, MAX_STAMINA)
-		timeSinceSprint = 0
-		Humanoid.WalkSpeed = RUN_SPEED
-		TweenService:Create(Camera, fovSprint, {FieldOfView = 80}):Play()
-		
-		if currentStamina <= 0 then
-			isExhausted = true
-			isSprinting = false
-			Humanoid.WalkSpeed = EXHAUSTED_SPEED 
-		end
-	else
-		timeSinceSprint = timeSinceSprint + dt
-		if timeSinceSprint > REGEN_DELAY then
-			currentStamina = math.clamp(currentStamina + (STAMINA_REGEN * dt), 0, MAX_STAMINA)
-		end
-		
-		if isExhausted then
-			if currentStamina > 30 then 
-				isExhausted = false
-				Humanoid.WalkSpeed = WALK_SPEED
-			else
-				Humanoid.WalkSpeed = EXHAUSTED_SPEED
-			end
-		else
-			Humanoid.WalkSpeed = WALK_SPEED
-		end
-		TweenService:Create(Camera, fovNormal, {FieldOfView = 70}):Play()
-	end
-	
-	-- 2. CAMERA BOB (The Juice)
-	if moving then
-		local time = tick()
-		-- Bob faster if sprinting
-		local speed = isSprinting and (BOB_SPEED * 1.5) or BOB_SPEED
-		local intensity = isSprinting and (BOB_INTENSITY * 1.5) or BOB_INTENSITY
-		
-		-- Simple Sine Wave on Y axis
-		local bobY = math.sin(time * speed) * intensity * 0.5
-		-- Slight X sway
-		local bobX = math.cos(time * (speed / 2)) * intensity * 0.2
-		
-		-- Apply to Camera Offset (Requires CFrame manip in RenderStepped usually, 
-		-- but modifying Camera.CFrame in Heartbeat works if CameraSubject is Humanoid)
-		-- A cleaner way is Humanoid.CameraOffset
-		Humanoid.CameraOffset = Humanoid.CameraOffset:Lerp(Vector3.new(bobX, bobY, 0), 0.1)
-	else
-		Humanoid.CameraOffset = Humanoid.CameraOffset:Lerp(Vector3.zero, 0.1)
-	end
-end)
-
-Player.CharacterAdded:Connect(function(newChar)
-	Character = newChar
-	Humanoid = newChar:WaitForChild("Humanoid")
-	currentStamina = MAX_STAMINA
-	isExhausted = false
-end)
+RunService.Heartbeat:Connect(updateSpeed)
