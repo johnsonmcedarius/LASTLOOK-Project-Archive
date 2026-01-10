@@ -1,85 +1,55 @@
 -- -------------------------------------------------------------------------------
 -- 📂 PROJECT: LAST LOOK
--- 📝 SCRIPT: ShearsController (Client - SKINS UPDATE)
+-- 📝 SCRIPT: ShearsController (Client - INSTANT HIT)
 -- 🛠️ AUTH: Novae Studios
--- 💡 DESC: Handles input, animations, and Skin Mesh Swapping.
+-- 💡 DESC: Detects hits locally. Sends to server. Handles Lunge.
 -- -------------------------------------------------------------------------------
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ContextActionService = game:GetService("ContextActionService")
+local RunService = game:GetService("RunService")
 
 local Player = Players.LocalPlayer
 local CombatRemote = ReplicatedStorage:WaitForChild("CombatEvent")
 
-local ATTACK_COOLDOWN = 2.5
-local canAttack = true
+local canSwing = true
+local LUNGE_FORCE = 50
 
-local loadedAnims = {}
-
-local function playAnim(animName)
-	local char = Player.Character
-	if not char then return end
-	local hum = char:FindFirstChild("Humanoid")
-	if not hum then return end
-	local animator = hum:FindFirstChild("Animator") or hum:WaitForChild("Animator")
-	
-	if not loadedAnims[animName] then
-		local anim = Instance.new("Animation")
-		anim.AnimationId = animName 
-		loadedAnims[animName] = animator:LoadAnimation(anim)
-	end
-	
-	loadedAnims[animName]:Play()
-end
-
--- // HELPER: Apply Skin (MeshID)
--- [NEW] This should be called when character spawns or skin changes
-local function applyShearsSkin()
-	local char = Player.Character
-	if not char then return end
-	local shears = char:FindFirstChild("Shears")
-	if not shears then return end
-	
-	-- Look for attribute or data
-	local skinMeshId = Player:GetAttribute("EquippedShearsSkin") 
-	-- If no custom skin, keep default
-	
-	if skinMeshId and skinMeshId ~= "" then
-		local mesh = shears:FindFirstChild("Mesh") or Instance.new("SpecialMesh", shears)
-		mesh.MeshId = skinMeshId
-		-- Reset texture if needed or apply matching texture
-	end
-end
-
-local function onAttackInput(actionName, inputState, inputObject)
-	if inputState == Enum.UserInputState.Begin then
+local function performAttack(actionName, inputState)
+	if inputState == Enum.UserInputState.Begin and canSwing then
+		canSwing = false
 		local char = Player.Character
-		if not char then return end
-		local shears = char:FindFirstChild("Shears")
-		if not shears then return end 
+		local root = char.HumanoidRootPart
 		
-		if not canAttack then return end
-		canAttack = false
+		-- 1. Lunge (Velocity Impulse)
+		root:ApplyImpulse(root.CFrame.LookVector * LUNGE_FORCE * root.AssemblyMass)
 		
-		CombatRemote:FireServer("SwingShears")
+		-- 2. Hitbox (Raycast/Overlap)
+		local hitParams = OverlapParams.new()
+		hitParams.FilterDescendantsInstances = {char}
+		hitParams.FilterType = Enum.RaycastFilterType.Exclude
 		
-		task.wait(ATTACK_COOLDOWN)
-		canAttack = true
+		local hits = workspace:GetPartBoundsInBox(root.CFrame * CFrame.new(0,0,-3), Vector3.new(5,5,5), hitParams)
+		
+		for _, part in pairs(hits) do
+			local hum = part.Parent:FindFirstChild("Humanoid")
+			if hum then
+				local victim = Players:GetPlayerFromCharacter(part.Parent)
+				if victim and victim ~= Player then
+					-- Found a victim!
+					CombatRemote:FireServer("Hit", victim)
+					break -- Only hit one person per swing
+				end
+			end
+		end
+		
+		-- 3. Play Animation & Trail here
+		-- (User implements Anim logic)
+		
+		task.wait(2) -- Cooldown
+		canSwing = true
 	end
 end
 
-ContextActionService:BindAction("ShearsAttack", onAttackInput, true, Enum.UserInputType.MouseButton1, Enum.UserInputType.Touch)
-
-CombatRemote.OnClientEvent:Connect(function(action, targetPlayer)
-	if action == "VFX_Downed" and targetPlayer == Player then
-		print("🩸 I have been scrapped!")
-	elseif action == "ApplySkin" then
-		applyShearsSkin()
-	end
-end)
-
-Player.CharacterAdded:Connect(function()
-	task.wait(1)
-	applyShearsSkin()
-end)
+ContextActionService:BindAction("Attack", performAttack, true, Enum.UserInputType.MouseButton1, Enum.KeyCode.ButtonR2)
