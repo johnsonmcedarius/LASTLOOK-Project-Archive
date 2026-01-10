@@ -1,7 +1,7 @@
 -- -------------------------------------------------------------------------------
 -- 📂 PROJECT: LAST LOOK
--- 📝 SCRIPT: XPManager (Server - INFLUENCE UPDATE)
--- 🛠️ AUTH: Novae Studios
+-- 📝 SCRIPT: XPManager (Server - NEW CURVE)
+-- 🛠️ AUTH: Coding Partner
 -- 💡 DESC: Awards Influence (📍) on Level Up. 
 -- -------------------------------------------------------------------------------
 
@@ -13,7 +13,7 @@ local DataManager = require(game.ServerScriptService.DataManager)
 
 -- CONFIG
 local BASE_XP = 1000 
-local XP_MULTIPLIER = 1.2 
+local EXPONENT = 1.1 -- Gentle Curve
 local GAMEPASS_MULT = 2 
 
 local LevelUpRemote = Instance.new("RemoteEvent")
@@ -25,7 +25,8 @@ AddXPBindable.Name = "AddXP"
 AddXPBindable.Parent = ServerStorage
 
 local function getMaxXP(level)
-	return math.floor(BASE_XP * (level ^ XP_MULTIPLIER))
+	-- Formula: 1000 * (CurrentLevel ^ 1.1)
+	return math.floor(BASE_XP * (level ^ EXPONENT))
 end
 
 AddXPBindable.Event:Connect(function(player, amount)
@@ -40,6 +41,7 @@ AddXPBindable.Event:Connect(function(player, amount)
 	
 	data.XP += amount
 	
+	-- Level Up Check
 	local maxXP = getMaxXP(data.Level)
 	while data.XP >= maxXP do
 		data.XP -= maxXP
@@ -47,7 +49,7 @@ AddXPBindable.Event:Connect(function(player, amount)
 		
 		-- AWARD INFLUENCE
 		data.Influence = (data.Influence or 0) + 1
-		print("🆙 LEVEL UP! +1 Influence for " .. player.Name)
+		print("🆙 LEVEL UP! " .. player.Name .. " is now Level " .. data.Level)
 		
 		LevelUpRemote:FireClient(player, data.Level, 1) 
 		maxXP = getMaxXP(data.Level)
