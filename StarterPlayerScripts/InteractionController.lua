@@ -1,8 +1,8 @@
 -- -------------------------------------------------------------------------------
 -- 📂 PROJECT: LAST LOOK
--- 📝 SCRIPT: InteractionController (Client - VISUALS UPDATE)
+-- 📝 SCRIPT: InteractionController (Client - VISUALS + PROGRESS BAR)
 -- 🛠️ AUTH: Novae Studios
--- 💡 DESC: Adapts UI text & Highlights 3D targets (Glows).
+-- 💡 DESC: Adapts UI text, Highlights, and Progress Bar.
 -- -------------------------------------------------------------------------------
 
 local Players = game:GetService("Players")
@@ -17,63 +17,59 @@ local InteractionRemote = ReplicatedStorage:WaitForChild("InteractionEvent")
 
 -- // STATE
 local currentTarget = nil
-local currentHighlight = nil -- The glowing effect
+local currentHighlight = nil
 local lastText = ""
 local canInteract = false
 
 -- // UI REFS
 local PlayerGui = Player:WaitForChild("PlayerGui")
-local HUD = PlayerGui:WaitForChild("InteractionHUD")
+local HUD = PlayerGui:WaitForChild("InteractionHUD") -- Ensure this ScreenGui exists!
 local ActionButton = HUD:WaitForChild("ActionButton")
+local ProgressBarBg = HUD:FindFirstChild("ProgressBarBg") -- NEW: Progress Bar Background
+local ProgressBarFill = ProgressBarBg and ProgressBarBg:FindFirstChild("Fill") -- NEW: Fill
+
 HUD.Enabled = true
 ActionButton.Visible = false
+if ProgressBarBg then ProgressBarBg.Visible = false end
 
--- // CONFIG COLORS (Updated for Visuals)
-local COL_USE = Color3.fromRGB(0, 255, 120)     -- Green (Tasks)
-local COL_RESCUE = Color3.fromRGB(255, 50, 50)  -- Red (Rescue)
-local COL_LOCKED = Color3.fromRGB(150, 150, 150)-- Gray (Locked Door)
-local COL_ESCAPE = Color3.fromRGB(50, 255, 255) -- Cyan (Open Door)
+-- // CONFIG COLORS
+local COL_USE = Color3.fromRGB(0, 255, 120)     
+local COL_RESCUE = Color3.fromRGB(255, 50, 50)  
+local COL_LOCKED = Color3.fromRGB(150, 150, 150)
+local COL_ESCAPE = Color3.fromRGB(50, 255, 255) 
 
 -- // HELPER: Get Context
 local function getContext(obj)
 	if CollectionService:HasTag(obj, "Station") then
-		return "USE", COL_USE, true
-		
+		return "REPAIR", COL_USE, true
 	elseif CollectionService:HasTag(obj, "MannequinStand") then
 		return "RESCUE", COL_RESCUE, true
-		
 	elseif CollectionService:HasTag(obj, "ExitGate") then
 		local powered = workspace:GetAttribute("ExitPowered") == true
 		if powered then
 			return "ESCAPE", COL_ESCAPE, true
 		else
-			return "LOCKED", COL_LOCKED, false -- False = Cannot interact
+			return "LOCKED", COL_LOCKED, false
 		end
 	end
-	
 	return "INTERACT", Color3.fromRGB(255, 255, 255), true
 end
 
--- // HELPER: Manage Highlight
+-- // HELPER: Update Highlight
 local function updateHighlight(target, color)
-	-- If we switched targets, destroy the old glow
 	if currentHighlight and currentHighlight.Parent ~= target then
 		currentHighlight:Destroy()
 		currentHighlight = nil
 	end
-	
-	-- Create new glow if missing
 	if target and not currentHighlight then
 		local hl = Instance.new("Highlight")
 		hl.Name = "InteractionGlow"
-		hl.Adornee = target -- Use Adornee so we don't mess up Model children
+		hl.Adornee = target
 		hl.Parent = target
-		hl.FillTransparency = 0.8 -- Subtle fill
-		hl.OutlineTransparency = 0 -- Sharp outline
+		hl.FillTransparency = 0.8
+		hl.OutlineTransparency = 0
 		currentHighlight = hl
 	end
-	
-	-- Update Color
 	if currentHighlight then
 		currentHighlight.FillColor = color
 		currentHighlight.OutlineColor = color
@@ -101,15 +97,13 @@ RunService.Heartbeat:Connect(function()
 	if not root then return end
 	
 	local closest = nil
-	local minDst = 10 -- Max Interaction Distance
+	local minDst = 12
 	
-	-- 1. Scan Candidates
 	local candidates = {}
 	for _, t in pairs(CollectionService:GetTagged("Station")) do table.insert(candidates, t) end
 	for _, t in pairs(CollectionService:GetTagged("ExitGate")) do table.insert(candidates, t) end
 	for _, t in pairs(CollectionService:GetTagged("MannequinStand")) do table.insert(candidates, t) end
 	
-	-- 2. Find Closest
 	for _, obj in pairs(candidates) do
 		local prim = obj:IsA("Model") and obj.PrimaryPart or obj
 		if prim then
@@ -121,35 +115,36 @@ RunService.Heartbeat:Connect(function()
 		end
 	end
 	
-	-- 3. Update State
+	-- PROGRESS BAR UPDATER
+	if closest and closest:GetAttribute("Progress") and ProgressBarFill then
+		local progress = closest:GetAttribute("Progress") or 0
+		local max = closest:GetAttribute("WorkRequired") or 100 -- Default to 100 if missing
+		local ratio = math.clamp(progress / max, 0, 1)
+		
+		ProgressBarBg.Visible = true
+		ProgressBarFill.Size = UDim2.fromScale(ratio, 1)
+	else
+		if ProgressBarBg then ProgressBarBg.Visible = false end
+	end
+	
 	if closest ~= currentTarget then
-		-- Clean up old highlight immediately
-		if currentHighlight then 
-			currentHighlight:Destroy()
-			currentHighlight = nil
-		end
+		if currentHighlight then currentHighlight:Destroy() currentHighlight = nil end
 		
 		currentTarget = closest
 		
 		if currentTarget then
 			local text, color, active = getContext(currentTarget)
 			
-			-- Update UI
 			ActionButton.Visible = true
 			ActionButton.Text = text
 			ActionButton.BackgroundColor3 = color:Lerp(Color3.new(0,0,0), 0.8)
 			ActionButton.TextColor3 = color
 			
-			local stroke = ActionButton:FindFirstChildOfClass("UIStroke")
-			if stroke then stroke.Color = color end
-			
-			-- Update Visuals (Glow)
 			updateHighlight(currentTarget, color)
 			
 			canInteract = active
 			lastText = text
 			
-			-- Bind Input
 			if active then
 				ContextActionService:BindAction("InteractAction", handleInteraction, true, Enum.KeyCode.E, Enum.KeyCode.ButtonY)
 				ContextActionService:SetTitle("InteractAction", text)
@@ -157,40 +152,20 @@ RunService.Heartbeat:Connect(function()
 				ContextActionService:UnbindAction("InteractAction")
 			end
 			
-			-- Animation Pop
-			ActionButton.Size = UDim2.fromOffset(0, 0)
-			TweenService:Create(ActionButton, TweenInfo.new(0.3, Enum.EasingStyle.Back), {Size = UDim2.fromOffset(120, 60)}):Play()
-			
 		else
-			-- Lost Target
 			canInteract = false
 			ActionButton.Visible = false
 			ContextActionService:UnbindAction("InteractAction")
 			InteractionRemote:FireServer("StopTask")
 		end
-		
 	elseif currentTarget then
-		-- Dynamic updates (e.g., Gate powers on while looking at it)
 		local text, color, active = getContext(currentTarget)
-		
-		-- Always keep the highlight color synced
 		updateHighlight(currentTarget, color)
-		
 		if text ~= lastText then
 			lastText = text
 			canInteract = active
 			ActionButton.Text = text
 			ActionButton.TextColor3 = color
-			ActionButton.BackgroundColor3 = color:Lerp(Color3.new(0,0,0), 0.8)
-			
-			local stroke = ActionButton:FindFirstChildOfClass("UIStroke")
-			if stroke then stroke.Color = color end
-			
-			if active then
-				ContextActionService:BindAction("InteractAction", handleInteraction, true, Enum.KeyCode.E, Enum.KeyCode.ButtonY)
-			else
-				ContextActionService:UnbindAction("InteractAction")
-			end
 		end
 	end
 end)
