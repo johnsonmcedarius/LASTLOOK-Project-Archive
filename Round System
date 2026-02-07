@@ -1,0 +1,147 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local Teams = game:GetService("Teams")
+
+-- CONSTANTS
+local INTERMISSION_TIME = 10
+local ROUND_TIME = 30
+local MIN_PLAYERS = 2 
+
+-- REFERENCES
+local MapsFolder = ReplicatedStorage:WaitForChild("Maps")
+local StatusValues = ReplicatedStorage:WaitForChild("StatusValues")
+local StatusText = StatusValues:WaitForChild("StatusText")
+local TimerValue = StatusValues:WaitForChild("Timer")
+
+local LobbyTeam = Teams:WaitForChild("Lobby")
+local DesignersTeam = Teams:WaitForChild("Designers")
+local CriticsTeam = Teams:WaitForChild("Critics")     
+
+local currentMapModel = nil
+local lobbySpawn = Workspace:FindFirstChild("LobbySpawn")
+
+-- Improved Teleport Function
+local function teleportPlayers(playersTable, targetCFrame)
+	for _, player in pairs(playersTable) do
+		if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+			local offset = Vector3.new(math.random(-3,3), 3, math.random(-3,3))
+			player.Character:PivotTo(targetCFrame + offset)
+		end
+	end
+end
+
+local function resetTeams()
+	for _, player in pairs(Players:GetPlayers()) do
+		player.Team = LobbyTeam
+	end
+end
+
+-- MAIN GAME LOOP
+while true do
+	resetTeams()
+	if currentMapModel then currentMapModel:Destroy() currentMapModel = nil end
+
+	-- INTERMISSION
+	while #Players:GetPlayers() < MIN_PLAYERS do
+		StatusText.Value = "Waiting for Players... (Need " .. MIN_PLAYERS .. "+)"
+		TimerValue.Value = 0
+		task.wait(1)
+	end
+
+	for i = INTERMISSION_TIME, 0, -1 do
+		StatusText.Value = "Intermission"
+		TimerValue.Value = i
+		task.wait(1)
+	end
+
+	-- MAP SELECTION
+	StatusText.Value = "Selecting Map..."
+	task.wait(1)
+
+	local availableMaps = MapsFolder:GetChildren()
+	if #availableMaps > 0 then
+		local randomMap = availableMaps[math.random(1, #availableMaps)]
+		currentMapModel = randomMap:Clone()
+		currentMapModel.Parent = Workspace
+
+		local designerSpawn = currentMapModel:FindFirstChild("Spawn")
+		local criticSpawn = currentMapModel:FindFirstChild("CriticSpawn") or designerSpawn
+
+		if designerSpawn then
+			local allPlayers = Players:GetPlayers()
+			local numCritics = #allPlayers >= 4 and 2 or 1
+
+			-- Shuffle logic
+			for i = #allPlayers, 2, -1 do
+				local j = math.random(i)
+				allPlayers[i], allPlayers[j] = allPlayers[j], allPlayers[i]
+			end
+
+			---------------------------------------------------------
+			-- THE NEW "AND" LOGIC FOR CRITICS
+			---------------------------------------------------------
+			local selectedCriticNames = {}
+
+			-- Assign Critics and save their names
+			for i = 1, numCritics do
+				allPlayers[i].Team = CriticsTeam
+				table.insert(selectedCriticNames, allPlayers[i].Name)
+			end
+
+			-- Assign Designers
+			for i = numCritics + 1, #allPlayers do
+				allPlayers[i].Team = DesignersTeam
+			end
+
+			-- Format the announcement string
+			if #selectedCriticNames == 1 then
+				StatusText.Value = selectedCriticNames[1] .. " is the Critic!"
+			elseif #selectedCriticNames == 2 then
+				StatusText.Value = selectedCriticNames[1] .. " AND " .. selectedCriticNames[2] .. " are the Critics!"
+			end
+
+			task.wait(2.5) -- Give them a moment to see who it is!
+
+			StatusText.Value = "Game Starting..."
+			task.wait(1)
+
+			teleportPlayers(DesignersTeam:GetPlayers(), designerSpawn.CFrame)
+			teleportPlayers(CriticsTeam:GetPlayers(), criticSpawn.CFrame)
+
+			-- ROUND PLAYING
+			for i = ROUND_TIME, 0, -1 do
+				local designerCount = #DesignersTeam:GetPlayers()
+				local criticCount = #CriticsTeam:GetPlayers()
+
+				if designerCount == 0 then
+					StatusText.Value = "Critics Win! The Collection Flunked."
+					break
+				elseif criticCount == 0 then
+					StatusText.Value = "Designers Win! Critics Left."
+					break
+				elseif #Players:GetPlayers() < MIN_PLAYERS then
+					StatusText.Value = "Not enough designers!"
+					break
+				end
+
+				if i == 0 then
+					StatusText.Value = "The Collection is a Hit!"
+				else
+					StatusText.Value = "Designers Left: " .. designerCount
+				end
+
+				TimerValue.Value = i
+				task.wait(1)
+			end
+		end
+	end
+
+	-- CLEANUP
+	task.wait(3)
+	StatusText.Value = "Round Over!"
+	if lobbySpawn then
+		teleportPlayers(Players:GetPlayers(), lobbySpawn.CFrame)
+	end
+	task.wait(2)
+end
